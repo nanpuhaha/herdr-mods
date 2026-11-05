@@ -1,0 +1,345 @@
+# Herdr Desktop App Mods 개발 자료
+
+## 1. herdr란?
+
+Herdr은 macOS/Windows/Linux용 코드 에이전트/터미널 관리 데스크톱 앱입니다.  
+터미널과 에이전트를 `herdr-core(`hc`)`에서 관리하고, 앱 창에서 공간(spaces)·탭(tabs)·펜(Panes)으로 구조화합니다.
+
+## 2. 핵심 컴포넌트
+
+### 2.1 herdr-core (`hc`)
+- 터미널 및 에이전트 실행/관리 (별도 프로세스)
+- `hc run`, `hc exec`, `hc send`, `hc read`, `hc wait` 등의 명령 제공
+- `hc machine ls`로 원격 머신 관리
+
+### 2.2 herdr-app
+- UI 창 (터미널/에이전트 표시)
+- `herdr-app do <command>`로 구조 변경
+- `herdr-app ls`, `status`, `commands`로 조회
+
+## 3. 모듈(mod) 구조
+
+```
+~/.config/herdr-app/mods/<name>/
+  main.js       # 필수: View 클래스 내보내기
+  mod.json      # { "place": "none" } 또는 { "place": "right|left|top|bottom", "size": 320 }
+  *.js          # 모듈 파일 ("./ui.js" 등)
+  *.svg         # 아이콘
+```
+
+### 3.1 mod.json 의 `place` 값
+- `"none"`: 레이아웃이나 다른 모드가 배치할 때만 표시
+- `"right"` / `"left"` / `"top"` / `"bottom"`: 사이드바 혹은 상단/하단 고정
+
+### 3.2 View 클래스 구조
+
+```js
+import { View, div } from "gpui-kit";
+import { v_flex, h_flex } from "gpui-base";
+import { exec, spaces, theme, run } from "herdr";
+
+export default class MyMod extends View {
+  init(_props, cx) {
+    // 모드 초기화: 타이머, 스폰, 키 핸들링
+    cx.timer.every(1000, cx => this.refresh(cx));
+    cx.spawn(async cx => {
+      for (;;) {
+        const c = await nextCommand();  // 키 명령 대기
+        this.handleCommand(c, cx);
+      }
+    });
+  }
+  
+  async close(cx) {
+    // 모드 닫힘 시 정리 (옵션)
+  }
+  
+  render(cx) {
+    const t = theme();
+    return div()
+      .bg(t.surface)
+      .p(10)
+      .child(/* 구조 */);
+  }
+}
+```
+
+## 4. 핵심 API (herdr 모듈)
+
+### 4.1 Live Data 함수
+| 함수 | 설명 |
+|------|------|
+| `spaces()` | 모든 공간: id, name, named, folder, machine, tabs, branch |
+| `agents()` | 실행 중인 에이전트: status, app, space, tab, pinned, focused |
+| `terminals()` | 모든 core 터미널 |
+| `panes()` | 모델 팬들 (모드 팬 포함) |
+| `machines()` | 연결된 머신: name, layout (loading/ready/unavailable) |
+| `focused()` | 현재 포커스: space, tab, pane, terminal, agent |
+| `layout()` | 현재 레이아웃 트리 |
+| `theme()` | 색상: background, surface, canvas, chrome, accent, border, ansi0..15 등 |
+| `settings()` | zoom, sounds, dark, font 등 사용자 설정 |
+| `keys()` | 모든 키 바인딩 |
+| `commands()` | 모든 앱 명령어 |
+| `layouts()` | 레이아웃 이름 목록 |
+
+### 4.2 Act 함수
+| 함수 | 설명 |
+|------|------|
+| `run(name, args)` | 앱 명령 실행 (space.new, tab.new, pane.split, agent.focus 등) |
+| `exec(cmd, args, options)` | 프로그램 실행 (30s 제한, 8MiB 출력) `on`으로 머신 지정 |
+| `hc(args)` | herdr-core 명령 실행 |
+| `openOverlay(spec)` | 오버레이/다이얼로그/윈도우 표시 |
+| `closeOverlay(id)` | 오버레이 닫기 |
+| `notify({title, body, level})` | 네이티브 알림 |
+
+### 4.3 상태 관리
+| 함수 | 설명 |
+|------|------|
+| `shared(key)` | 모든 모드가 읽는 공유 상태 |
+| `setShared(key, value)` | 공유 상태 설정 (재렌더 유발) |
+| `props()` | 모드에 전달된 프로퍼티 |
+| `nextCommand()` | 키 명령 대기 (async) |
+
+## 5. UI 컴포넌트 (gpui-kit)
+
+### 5.1 요소 빌더
+```js
+import { View, div, h_flex, v_flex } from "gpui-kit";
+```
+
+### 5.2 주요 스타일링 메서드 체인
+```
+div()
+  .id("unique")           // 식별자
+  .bg(color)             // 배경색
+  .text_color(color)     // 텍스트 색상
+  .w(n) / .h(n)          // 너비/높이 (px)
+  .p(n) / .px(n) / .py(n) // 패딩
+  .gap(n)                // 자식 간 간격
+  .rounded(n)            // 라운드
+  .border(1)             // 테두리
+  .cursor_pointer()      // 커서 스타일
+  .on_click(fn)          // 클릭 핸들러
+  .on_key_down(fn)       // 키 핸들러
+  .tooltip(text)         // 툴팁
+  .when(cond, fn)        // 조건부 렌더링
+  .child(el)             // 단일 자식
+  .children([...])       // 다중 자식
+```
+
+### 5.3 자주 쓰는 패턴
+```js
+// 수직 레이아웃
+v_flex()
+  .size_full()
+  .gap(8)
+  .p(12)
+
+// 수평 레이아웃
+h_flex()
+  .gap(8)
+  .items_center()
+  .justify_between()
+
+// 클릭 가능한 요소
+div()
+  .cursor_pointer()
+  .on_click(() => run("pane.split", { direction: "right" }))
+  .bg(t.accent)
+  .rounded(6)
+```
+
+## 6. 레이아웃 (layouts/)
+
+### 6.1 레이아웃 JSON 구조
+```json
+{
+  "id": "root",
+  "type": "row",
+  "children": [
+    {
+      "id": "sidebar",
+      "type": "column",
+      "size": { "px": 240 },
+      "children": [
+        { "id": "spaces", "type": "block", "content": { "mod": "spaces" } },
+        { "id": "agents", "type": "block", "content": { "mod": "agents" } }
+      ]
+    },
+    {
+      "id": "work",
+      "type": "column",
+      "children": [
+        { "id": "tabs", "type": "block", "size": { "px": 30 }, "content": { "mod": "tabs" } },
+        { "id": "main", "type": "block", "content": { "tab": "active" } }
+      ]
+    }
+  ]
+}
+```
+
+### 6.2 노드 타입
+- `block`: 콘텐츠 표시 (`{ mod, props }` 또는 `{ terminal }` 또는 `{ tab: "active" }`)
+- `row` / `column`: 자식 수평/수직 배치
+- `stack`: 하나의 자식만 표시 (header으로 탭 스트립 가능)
+
+## 7. 예시: 실제 mod 들 보기
+
+### 7.1 herdr-quota (상태표시줄 쿼터 모니터링)
+- `mod.json`: `{ "place": "none" }` (상태줄에 자동 추가됨)
+- `main.js`: `exec`로 `quota-axi --json` 호출, `shared()`로 상태 저장, `theme()` 색상 사용
+- 오버레이 팝업: `openOverlay({ kind: "popup", width: 300, height: …, props: { menu: true } })`
+
+### 7.2 agent-limits (에이전트 사용량 표시)
+- 사이드바의 Agents 목록 하단에 배치
+- `exec()`로 쉘 스크립트 실행 (`limits.sh`)
+- `agents()`와 `theme()`로 렌더링
+
+## 8. 개발 작업 흐름
+
+### 8.1 체크 명령어
+```bash
+herdr-app check ~/.config/herdr-app/mods/<name>
+```
+수동으로 체크한 후 모드를 시험해보기.
+
+### 8.2 레이아웃/모드 복사 (클론)
+```bash
+herdr-app do mod.clone '{"name":"files","as":"my-files"}'
+herdr-app do layout.clone '{"name":"main","as":"my-layout"}'
+```
+`.d.ts` 파일은 앱 시작 시 덮어씌우므로 절대 수정하지 말 것.
+
+## 9. 주의사항
+
+1. **모든 콜백은 독립적인 cx를 받음**: `cx`를 보관하지 말 것
+2. **setTimeout/Interval 대신 cx.timer 사용**
+3. **긴 작업은 exec 또는 cx.spawn 사용**
+4. **테마는 theme() 함수로 가져옴**: light/dark 모두 지원
+5. **상태는 shared() 사용**: 모든 모드가 읽을 수 있음
+6. **네트워크/파일 작업은 부담스럽게**: 폴더 변경 감지는 `watchFolder()` 사용
+
+## 10. 핵심 파일
+
+| 파일 | 설명 |
+|------|------|
+| `AGENTS.md` | 전체 문서 (여기서 참고) |
+| `herdr.d.ts` | herdr 모듈 API 타입 정의 |
+| `gpui-kit.d.ts` | GPUI 컴포넌트 타입 정의 |
+| `layouts/main.json` | 기본 레이아웃 구조 |
+| `mods/spaces/main.js` | 공간 사이드바 구현 |
+| `mods/agents/main.js` | 에이전트 리스트 구현 |
+| `mods/pane/main.js` | 팬 헤더 예시 |
+| `mods/toast/main.js` | 알림 토스트 구현 |
+## 11. 앱 명령어 (herdr-app commands)
+
+### 공간(Space) 관리
+| 명령 | 설명 |
+|------|------|
+| `space.new` | 새 공간 생성 (`{name, folder, tab, argv, task, machine}`) |
+| `space.close` | 공간 닫기 |
+| `space.rename` | 공간 이름 변경 |
+| `space.move` | 공간 이동 (`{id, index}`) |
+| `space.select` | 공간 선택 (`{index or id}`) |
+| `space.next` / `space.prev` | 공간 순환 |
+
+### 탭(Tab) 관리
+| 명령 | 설명 |
+|------|------|
+| `tab.new` | 새 탭 생성 (`{name, space, folder, argv, task, mod, props}`) |
+| `tab.close` | 탭 닫기 |
+| `tab.rename` | 탭 이름 변경 |
+| `tab.move` | 탭 이동 |
+| `tab.select` | 탭 선택 |
+| `tab.settle` / `tab.unsettle` | 탭 숨기기/보이기 |
+| `tab.next` / `tab.prev` | 탭 순환 |
+
+### 펜(Pane) 관리
+| 명령 | 설명 |
+|------|------|
+| `pane.split` | 펜 분할 (`{direction: "right"\|"down", pane, argv, mod, props}`) |
+| `pane.close` | 펜 닫기 |
+| `pane.zoom` | 펜 확대/축소 |
+| `pane.focus` | 펜 포커스 |
+| `pane.go` | 방향으로 포커스 이동 |
+| `pane.swap` | 인접 펜 교환 |
+
+### 터미널 관리
+| 명령 | 설명 |
+|------|------|
+| `terminal.open` | 터미널 열기 |
+| `terminal.kill` | 터미널 종료 |
+| `terminal.keep` / `terminal.park` | 터미널 유지 |
+| `terminal.peek` | 터미널 미리보기 |
+| `terminal.show` | 터미널 표시 |
+| `terminal.copy` / `terminal.paste` | 클립보드 |
+| `terminal.pin` | 에이전트 고정 |
+
+### 에이전트 관리
+| 명령 | 설명 |
+|------|------|
+| `agent.focus` | 에이전트 포커스 |
+| `agent.next` / `agent.prev` | 에이전트 순환 |
+
+### 레이아웃/모드
+| 명령 | 설명 |
+|------|------|
+| `layout.switch` | 레이아웃 전환 |
+| `layout.clone` | 레이아웃 복사 |
+| `mod.clone` | 모드 복사 |
+| `mod.open` | 모드 토글 |
+| `overlay.close` | 오버레이 닫기 |
+
+### 앱/윈도우
+| 명령 | 설명 |
+|------|------|
+| `app.settings` | 설정 열기 |
+| `app.palette` | 명령어 팔레트 |
+| `app.theme` | 테마 변경 |
+| `app.zoom_in/out/reset` | 확대/축소 |
+| `window.close/minimize/maximize` | 윈도우 제어 |
+
+## 12. 테스트 환경 (test/fake)
+
+모드 테스트를 위한 가짜 환경 (`/Users/jwseo/.config/herdr-app/mods/relevo/test/fake/`):
+
+```js
+// test/fake/herdr.mjs - 핵심 가짜 함수들
+export const agents = () => fake.agents;
+export const exec = async (cmd, args) => { fake.execs.push([...args].join(" ")); };
+export const run = (name, args) => { fake.runs.push([name, args]); };
+export const shared = (key) => fake.stored[key];
+export const setShared = (key, value) => { fake.stored[key] = value; };
+```
+
+테스트용 `fakeCx()` 함수로 컨텍스트 모킹:
+```js
+import { fakeCx, click, flush } from "./test/fake/ui.mjs";
+
+export async function test_example() {
+  const cx = fakeCx();
+  const mod = new MyMod();
+  mod.init({}, cx);
+  await flush();
+  const el = mod.render(cx);
+  click(el.on_click_handlers, cx);
+}
+```
+
+## 13. 참고: 실제 샘플 코드
+
+### 사이드바 모드 예시 (`mods/spaces/main.js`)
+- `spaces()`로 공간 목록 가져오기
+- `exec("git", ["branch", "--show-current"], { cwd, on })`로 원격 Git 상태 조회
+- `v_flex()`, `h_flex()`로 레이아웃 구성
+- `cx.spawn(async (cx) => ...)`로 비동기 작동
+
+### 상태표시줄에 모드 추가하기
+`layout.json`의 root 아래에 추가:
+```json
+{
+  "id": "status",
+  "type": "block",
+  "content": { "mod": "herdr-quota" }
+}
+```
