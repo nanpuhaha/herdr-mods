@@ -13,7 +13,7 @@ const PROVIDER_METAS = {
     app: "claude",
   },
   codex: {
-    name: "OpenAI Codex",
+    name: "OpenAI ChatGPT",
     script: "helpers/codex.py",
     icon: "icons/codex.svg",
     color: "#10a37f",
@@ -47,6 +47,8 @@ const PERIODS = {
   monthly: 30 * 24 * 3600, // 30 days = 2,592,000s
   rolling: 24 * 3600,      // 24 hours = 86,400s
 };
+
+
 
 // 60-second cooldown: Opening/toggling the mod within 60s will NEVER trigger a refetch
 const MIN_REFRESH_INTERVAL = 60_000;
@@ -929,22 +931,100 @@ export default class OpenUsage extends View {
   }
 
   /**
-   * Ultra-compact rail icon for sidebar width < 140px
+   * Ensure iPhone Duo style circular gauge SVG is generated and cached for the account.
    */
-  renderSidebarRailAccount(t, acc, cx) {
-    const provMeta = PROVIDER_METAS[acc.provider] ?? PROVIDER_METAS.antigravity;
+  ensureDuoGaugeSvg(acc) {
     const state = this.accountData[acc.id] ?? { data: null };
     const data = state.data;
 
-    let overallDot = t.done;
+    let p1 = 0;
+    let p2 = 0;
+    let rem5 = null;
+    let rem7 = null;
+    let paceStatus = "idle";
+
+    if (data) {
+      const w5 = data.five_hour || (data.buckets?.[0]?.five_hour);
+      const w7 = data.seven_day || (data.buckets?.[0]?.seven_day);
+
+      if (w5) {
+        const pace5 = evaluatePace({
+          used: w5.utilization ?? 0,
+          resetsAt: w5.resets_at,
+          periodSeconds: PERIODS.session,
+        });
+        p1 = clamp(pace5.remainingPercent / 100);
+        rem5 = Math.round(pace5.remainingPercent);
+        paceStatus = pace5.status;
+      }
+
+      if (w7) {
+        const pace7 = evaluatePace({
+          used: w7.utilization ?? 0,
+          resetsAt: w7.resets_at,
+          periodSeconds: PERIODS.weekly,
+        });
+        p2 = clamp(pace7.remainingPercent / 100);
+        rem7 = Math.round(pace7.remainingPercent);
+        if (!w5) {
+          p1 = p2;
+          rem5 = rem7;
+          paceStatus = pace7.status;
+        }
+      } else if (w5) {
+        p2 = p1;
+        rem7 = rem5;
+      }
+    }
+
+    const c1 = (p1 < 0.2 || paceStatus === "spent") ? "#ef4444" : (paceStatus === "behind" ? "#f59e0b" : "#10b981");
+    const c2 = p2 < 0.2 ? "#ef4444" : (p2 < 0.5 ? "#f59e0b" : "#06b6d4");
+
+    const gaugeKey = `${acc.id}:${p1.toFixed(2)}:${p2.toFixed(2)}:${paceStatus}`;
+    const relPath = `mods/openusage/cache/duo-${acc.id}.svg`;
+
+    if (state.lastGaugeKey !== gaugeKey) {
+      state.lastGaugeKey = gaugeKey;
+      try {
+        exec("python3", [
+          "mods/openusage/helpers/duo_svg.py",
+          acc.id,
+          p1.toFixed(2),
+          p2.toFixed(2),
+          paceStatus,
+        ]);
+      } catch (_err) {
+        // Ignore exec errors
+      }
+    }
+
+    return { relPath, rem5, rem7, paceStatus };
+  }
+
+  /**
+   * Ultra-compact rail icon for sidebar width < 140px.
+   * Rendered in the style of "iPhone Duo" battery/network widget:
+   * - Top: Remaining percentage number (50, 16, etc.)
+   * - Center: Provider logo SVG (OpenAI, Claude, Antigravity, OpenCode)
+   * - Left Arc: 5-hour quota remaining gauge
+   * - Right Arc: Weekly quota remaining gauge
+   * - Bottom: 4 pace indicator dots
+   */
+  renderSidebarRailAccount(t, acc, cx) {
+    const provMeta = PROVIDER_METAS[acc.provider] ?? PROVIDER_METAS.antigravity;
+    const { relPath, rem5, rem7, paceStatus } = this.ensureDuoGaugeSvg(acc);
+
+    const displayNum = rem5 !== null ? String(rem5) : (rem7 !== null ? String(rem7) : "—");
+    const numFontSize = displayNum.length >= 3 ? 8 : 9;
+
+    const state = this.accountData[acc.id] ?? { data: null };
+    const data = state.data;
     const summaries = [];
     if (data) {
       const checkPace = (w, period, name) => {
         if (!w) return;
         const res = evaluatePace({ used: w.utilization ?? 0, resetsAt: w.resets_at, periodSeconds: period });
-        if (res.status === "spent" || res.status === "behind") overallDot = t.blocked;
-        else if (res.status === "onTrack" && overallDot !== t.blocked) overallDot = t.working;
-        summaries.push(`• ${name}: ${Math.round(res.remainingPercent)}% (${countdown(w.resets_at) || "idle"})`);
+        summaries.push(`• ${name}: 잔여 ${Math.round(res.remainingPercent)}% (${countdown(w.resets_at) || "idle"})`);
       };
       if (data.five_hour) checkPace(data.five_hour, PERIODS.session, "5시간");
       if (data.seven_day) checkPace(data.seven_day, PERIODS.weekly, "주간");
@@ -956,25 +1036,69 @@ export default class OpenUsage extends View {
       }
     }
 
+    const paceKo = {
+      ahead: "여유 (Ahead)",
+      onTrack: "정상 (On Track)",
+      behind: "빠름 (Behind)",
+      spent: "소진 (Spent)",
+      idle: "대기 (Idle)",
+    }[paceStatus] ?? "정상";
+
     const tip = [
       `${acc.name} (${acc.label || "Default"})`,
       ...summaries,
-      "Click to open dashboard",
+      `페이스: ${paceKo}`,
+      "클릭하여 전체 사용량 열기",
     ].join("\n");
 
     return div()
-      .p(6)
-      .rounded(6)
+      .id(`rail-acc-${acc.id}`)
+      .size(46)
+      .relative()
+      .flex()
+      .items_center()
+      .justify_center()
       .cursor_pointer()
       .hover((s) => s.bg(t.hover))
+      .rounded(8)
       .tooltip(tip)
       .on_click(() => run("mod.open", { name: "openusage" }))
+      // 1. iPhone Duo Style Circular Dual-Arc & Dots SVG
       .child(
-        v_flex()
+        div()
+          .absolute()
+          .inset_0()
+          .flex()
           .items_center()
-          .gap(3)
-          .child(svg(provMeta.icon).size(16))
-          .child(div().size(5).rounded(2.5).bg(overallDot))
+          .justify_center()
+          .child(svg(relPath).size(38))
+      )
+      // 2. Top Remaining Percentage Number
+      .child(
+        div()
+          .absolute()
+          .top(2)
+          .w_full()
+          .flex()
+          .justify_center()
+          .child(
+            div()
+              .text_size(numFontSize)
+              .font_weight("bold")
+              .text_color(t.foreground)
+              .child(displayNum)
+          )
+      )
+      // 3. Center Provider Logo
+      .child(
+        div()
+          .absolute()
+          .inset_0()
+          .flex()
+          .items_center()
+          .justify_center()
+          .mt(1)
+          .child(svg(provMeta.icon).size(13))
       );
   }
 

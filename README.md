@@ -361,10 +361,18 @@ export async function test_example() {
   - 계정별 인증 소스(Keychain Service 명칭, 커스텀 `auth.json` 경로, CLI 등)를 독립적으로 지정
 - **왼쪽 사이드바(Sidebar) 너비 반응형(Responsive) 레이아웃**:
   - Herdr의 기본 `main` 레이아웃 왼쪽 사이드바(`sidebar-lists`)의 `usages` 블록에서 사이드바 가로 폭(`sidebar.size.px`)에 맞춰 4단계 반응형 레이아웃 자동 전환:
-    - **레일 모드 (Rail, < 140px)**: 좁은 폭(44px~76px)에서 컴팩트한 프로바이더 아이콘과 페이스 닷(🟢/🟡/🔴) 표시, 마우스 호버 시 5시간·주간 상세 잔여량 툴팁 제공, 클릭 시 대시보드 팝업
+    - **레일 모드 (Rail, < 140px)**: 좁은 폭(44px~76px)에서 **iPhone Duo 스타일 원형 위젯(Circular Dual-Arc Widget)**으로 혁신적 시각화:
+      - **상단 숫자**: 5시간 쿼터 잔여 퍼센트 숫자(예: `50`, `16`)를 굵은 폰트로 선명하게 표시
+      - **중앙 로고**: 프로바이더 공식 벡터 아이콘 (LobeHub 공식 OpenAI ChatGPT 로고, Claude, Antigravity, OpenCode) 배치
+      - **좌측 호 (Left Arc)**: 5시간 잔여량 게이지 (소진율과 권장 페이스에 따라 🟢녹색/🟡주황/🔴빨강 매끄러운 곡선 차오름)
+      - **우측 호 (Right Arc)**: 주간 잔여량 게이지 (7일 잔여 쿼터에 따라 🔵시안/🟡주황/🔴빨강 대칭 곡선 차오름)
+      - **하단 도트 4개 (Pace Dots)**: iPhone Duo 스타일의 4개 점(`••••`)을 통해 소비 페이스(여유/적정/조기소진 위험) 상태를 직관적으로 점등
+      - 마우스 호버 시 5시간·주간 상세 잔여량 및 타이머 툴팁 제공, 클릭 시 대시보드 팝업
     - **슬림 모드 (Narrow, 140px ~ 230px)**: 축약 라벨(`5h`, `7d`, `24h`)과 컴팩트 게이지 바를 상하 2줄로 배치하여 가로 잘림 없이 표시
     - **표준 모드 (Standard, 230px ~ 320px, 기본값 268px)**: `5시간`, `주간` 표준 라벨과 5px 잔여량 바, 선형 페이스 기준선(`|`), 리셋 카운트다운 타이머를 상하 2줄로 정렬
     - **와이드 모드 (Wide, >= 320px)**: 사이드바를 넓혔을 때 공간을 극대화하여 **`5시간`과 `주간` 게이지를 한 줄에 나란히 좌우 2열 컬럼(Dual Columns)**으로 동시 배치 (세로 공간 50% 절약)
+- **OpenAI ChatGPT 공식 아이콘 적용**:
+  - `https://lobehub.com/icons` 기준 공식 OpenAI ChatGPT 기하학적 심볼(꽃/매듭 로고) 벡터를 채택하여 `openusage/icons/codex.svg` 및 시스템 전역 아이콘 디렉토리에 완벽 반영
 - **Open 시 자동 새로고침 비활성화 및 수동 강제 갱신 구조**:
   - `shared("openusage.accounts_cache")`를 통해 사이드바, 탭, 오버레이 팝업 인스턴스 간 쿼터 데이터를 실시간 공유
   - 사이드바에서 `Open`을 누르거나 대시보드 창을 열 때 **자동으로 백엔드 API/CLI 재호출을 하지 않고**, 기존에 폴링·캐시된 데이터를 딜레이 없이 즉시 화면에 렌더링
@@ -387,16 +395,27 @@ export async function test_example() {
 ```
 openusage/
 ├── mod.json          # 모드 설정 (다이얼로그 크기 및 타이틀 정의)
-├── main.js           # GPUI 컴포넌트 뷰 (사이드바 / 대시보드 / 설정 화면 3단 뷰)
-├── helpers/          # 프로바이더별 CLI/API 데이터 수집기 및 계정 매니저
+├── main.js           # GPUI 컴포넌트 뷰 (사이드바 4단계 반응형 / 대시보드 / 설정 화면)
+├── cache/            # 레일 뷰용 iPhone Duo 스타일 원형 게이지 SVG 캐시
+│   ├── duo-default.svg
+│   ├── duo-codex-default.svg
+│   ├── duo-claude-default.svg
+│   ├── duo-antigravity-default.svg
+│   └── duo-opencode-default.svg
+├── helpers/          # 프로바이더별 CLI/API 데이터 수집기 및 위젯 생성기
 │   ├── accounts.py   # 다중 계정 설정(~/.config/herdr-app/openusage-accounts.json) CRUD
+│   ├── duo_svg.py    # iPhone Duo 스타일 원형 듀얼 아크 SVG 생성기
 │   ├── antigravity.py
 │   ├── claude.py     # 커스텀 Keychain Service 명칭 지원
 │   ├── codex.py      # 커스텀 auth.json 경로 지원
 │   └── opencode.py
 └── icons/            # SVG 아이콘
     ├── openusage.svg
-    └── refresh.svg
+    ├── refresh.svg
+    ├── codex.svg     # LobeHub 공식 OpenAI ChatGPT 심볼
+    ├── claude.svg
+    ├── antigravity.svg
+    └── opencode.svg
 ```
 
 ### 14.3 실행 및 배치 방법
