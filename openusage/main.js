@@ -1101,7 +1101,7 @@ export default class OpenUsage extends View {
                 .flex()
                 .items_center()
                 .justify_center()
-                .child(svg(provMeta.icon).size(15).text_color(t.foreground))
+                .child(svg(provMeta.icon).size(15).text_color(is7dExhausted ? t.dim : t.foreground))
             )
             // 1d. Top Remaining % (5h / 24h) positioned in upper notch
             .child(
