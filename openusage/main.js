@@ -41,6 +41,14 @@ const PROVIDERS = {
   },
 };
 
+// Known window durations in seconds
+const PERIODS = {
+  session: 5 * 3600,       // 5 hours = 18,000s
+  weekly: 7 * 24 * 3600,   // 7 days = 604,800s
+  monthly: 30 * 24 * 3600, // 30 days = 2,592,000s
+  rolling: 24 * 3600,      // 24 hours = 86,400s
+};
+
 function clamp(value, min = 0, max = 100) {
   const n = Number.isFinite(value) ? value : 0;
   return Math.max(min, Math.min(max, n));
@@ -72,11 +80,121 @@ function timeAgo(stamp) {
   return `${Math.floor(hr / 24)}d ago`;
 }
 
-function statusLevel(t, pct) {
-  if (pct >= 90) return { label: "Critical", color: t.blocked, bg: t.blocked, textColor: t.blocked };
-  if (pct >= 75) return { label: "Warning", color: t.working, bg: t.working, textColor: t.working };
-  if (pct >= 50) return { label: "Moderate", color: t.accent, bg: t.accent, textColor: t.accent };
-  return { label: "Healthy", color: t.done, bg: t.done, textColor: t.done };
+/**
+ * OpenUsage (robinebers/openusage) Pace Algorithm implementation.
+ * Evaluates constant-rate burn guidance and projected status at window reset.
+ */
+function evaluatePace({ used, limit = 100, resetsAt, periodSeconds, now = Date.now() }) {
+  const actualRemaining = Math.max(0, limit - used);
+  const remainingPercent = Math.min(100, Math.max(0, (actualRemaining / limit) * 100));
+
+  if (!resetsAt || !periodSeconds || limit <= 0) {
+    return {
+      status: "unpaced",
+      statusText: null,
+      remainingPercent,
+      actualRemaining,
+      guideRemainingPercent: null,
+      projectedUsagePercent: null,
+      isAhead: null,
+    };
+  }
+
+  const resetMs = typeof resetsAt === "number" ? resetsAt : Date.parse(resetsAt);
+  if (!Number.isFinite(resetMs)) {
+    return {
+      status: "unpaced",
+      statusText: null,
+      remainingPercent,
+      actualRemaining,
+      guideRemainingPercent: null,
+      projectedUsagePercent: null,
+      isAhead: null,
+    };
+  }
+
+  const periodMs = periodSeconds * 1000;
+  const startMs = resetMs - periodMs;
+  const elapsedMs = now - startMs;
+  const remainingTimeMs = resetMs - now;
+
+  if (remainingTimeMs <= 0 || elapsedMs <= 0) {
+    return {
+      status: "unpaced",
+      statusText: null,
+      remainingPercent,
+      actualRemaining,
+      guideRemainingPercent: null,
+      projectedUsagePercent: null,
+      isAhead: null,
+    };
+  }
+
+  const elapsedFraction = Math.min(1, Math.max(0, elapsedMs / periodMs));
+  // Expected remaining percentage if spent at a completely linear rate
+  const guideRemainingPercent = Math.max(0, Math.min(100, (1 - elapsedFraction) * 100));
+
+  if (used >= limit) {
+    return {
+      status: "spent",
+      statusText: "Limit reached",
+      remainingPercent: 0,
+      actualRemaining: 0,
+      guideRemainingPercent,
+      projectedUsagePercent: 100,
+      isAhead: false,
+    };
+  }
+
+  if (used <= 0 || elapsedMs < Math.max(60_000, periodMs * 0.01)) {
+    return {
+      status: "healthy",
+      statusText: "100% available",
+      remainingPercent,
+      actualRemaining,
+      guideRemainingPercent,
+      projectedUsagePercent: 0,
+      isAhead: true,
+    };
+  }
+
+  // OpenUsage projection: projected = used / elapsed * periodDuration
+  const projectedUsed = (used / elapsedMs) * periodMs;
+  const projectedFraction = projectedUsed / limit;
+  const projectedUsagePercent = Math.round(projectedFraction * 100);
+
+  let status = "ahead";
+  let statusText = "";
+  let isAhead = true;
+
+  if (projectedUsed > limit) {
+    // Behind pace: Burning faster than linear guide (조기 소진 위험)
+    status = "behind";
+    isAhead = false;
+    const overPercent = Math.max(1, Math.round((projectedFraction - 1) * 100));
+    statusText = `~${overPercent}% over limit at reset`;
+  } else if (projectedUsed > limit * 0.9) {
+    // On track: Close to limit at reset (90-100% projected)
+    status = "onTrack";
+    isAhead = false;
+    statusText = `~${projectedUsagePercent}% used at reset`;
+  } else {
+    // Ahead: Burning slower than linear guide, comfortable remaining quota
+    status = "ahead";
+    isAhead = true;
+    const leftPercent = Math.max(1, Math.round((1 - projectedFraction) * 100));
+    statusText = `~${leftPercent}% left at reset`;
+  }
+
+  return {
+    status,
+    statusText,
+    remainingPercent,
+    actualRemaining,
+    guideRemainingPercent,
+    projectedUsagePercent,
+    isAhead,
+  };
 }
 
 export default class OpenUsage extends View {
@@ -143,36 +261,45 @@ export default class OpenUsage extends View {
     return Object.values(this.providers).some((p) => p.loading);
   }
 
-  getPeakUsage() {
-    let peak = 0;
-    let peakName = "";
+  getOverallPacingSummary(t) {
+    let aheadCount = 0;
+    let onTrackCount = 0;
+    let behindCount = 0;
 
-    const check = (pct, name) => {
-      if (pct > peak) {
-        peak = pct;
-        peakName = name;
-      }
+    const test = (w, period) => {
+      if (!w || !w.resets_at) return;
+      const res = evaluatePace({ used: w.utilization ?? 0, resetsAt: w.resets_at, periodSeconds: period });
+      if (res.status === "behind" || res.status === "spent") behindCount++;
+      else if (res.status === "onTrack") onTrackCount++;
+      else if (res.status === "ahead" || res.status === "healthy") aheadCount++;
     };
 
     const p = this.providers;
     if (p.claude.data) {
-      if (p.claude.data.five_hour) check(p.claude.data.five_hour.utilization, "Claude 5h");
-      if (p.claude.data.seven_day) check(p.claude.data.seven_day.utilization, "Claude Weekly");
+      test(p.claude.data.five_hour, PERIODS.session);
+      test(p.claude.data.seven_day, PERIODS.weekly);
     }
     if (p.codex.data) {
-      if (p.codex.data.five_hour) check(p.codex.data.five_hour.utilization, "Codex 5h");
-      if (p.codex.data.seven_day) check(p.codex.data.seven_day.utilization, "Codex Weekly");
+      test(p.codex.data.five_hour, PERIODS.session);
+      test(p.codex.data.seven_day, PERIODS.weekly);
     }
     if (p.antigravity.data) {
-      if (p.antigravity.data.five_hour) check(p.antigravity.data.five_hour.utilization, "Antigravity 5h");
-      if (p.antigravity.data.seven_day) check(p.antigravity.data.seven_day.utilization, "Antigravity Weekly");
+      test(p.antigravity.data.five_hour, PERIODS.session);
+      test(p.antigravity.data.seven_day, PERIODS.weekly);
     }
     if (p.opencode.data) {
-      if (p.opencode.data.rolling) check(p.opencode.data.rolling.utilization, "OpenCode Rolling");
-      if (p.opencode.data.weekly) check(p.opencode.data.weekly.utilization, "OpenCode Weekly");
-      if (p.opencode.data.monthly) check(p.opencode.data.monthly.utilization, "OpenCode Monthly");
+      test(p.opencode.data.rolling, PERIODS.rolling);
+      test(p.opencode.data.weekly, PERIODS.weekly);
+      test(p.opencode.data.monthly, PERIODS.monthly);
     }
-    return { peak: Math.round(peak), name: peakName };
+
+    if (behindCount > 0) {
+      return { label: `${behindCount} Burning Fast · ${aheadCount} Ahead`, color: t.blocked };
+    }
+    if (onTrackCount > 0) {
+      return { label: `${onTrackCount} On Track · ${aheadCount} Ahead`, color: t.working };
+    }
+    return { label: "All Pacing Healthy", color: t.done };
   }
 
   getEarliestReset() {
@@ -209,35 +336,62 @@ export default class OpenUsage extends View {
     return list.filter((a) => a.app === appKey || (appKey === "claude" && a.app === "claude-code"));
   }
 
-  renderProgressBar(t, pct, height = 6) {
-    const valid = clamp(pct);
-    const lvl = statusLevel(t, valid);
-    return h_flex()
-      .w_full()
-      .h(height)
-      .rounded(height / 2)
-      .bg(t.border)
-      .overflow_hidden()
-      .flex_none()
-      .child(
-        div()
-          .h_full()
-          .w(`${valid}%`)
-          .rounded(height / 2)
-          .bg(lvl.color)
-      );
-  }
-
-  renderMetricRow(t, label, windowData) {
+  /**
+   * Renders a Gauge representing Remaining Amount (잔여량)
+   * with OpenUsage constant-rate pace guide marker line and status color.
+   */
+  renderPacedMetricRow(t, label, windowData, periodSeconds) {
     if (!windowData) return null;
-    const util = Math.round(clamp(windowData.utilization ?? 0));
-    const rem = windowData.remaining != null ? Math.round(windowData.remaining) : 100 - util;
-    const reset = countdown(windowData.resets_at);
-    const lvl = statusLevel(t, util);
+    const used = clamp(windowData.utilization ?? 0);
+    const resetsAt = windowData.resets_at;
+    const pace = evaluatePace({
+      used,
+      limit: 100,
+      resetsAt,
+      periodSeconds,
+      now: Date.now(),
+    });
+
+    const remaining = Math.round(pace.remainingPercent);
+    const resetNote = countdown(resetsAt);
+
+    // Color based on whether user is within or exceeding linear burn guide
+    let barColor = t.done;
+    let badgeText = pace.statusText || `${remaining}% left`;
+    let badgeTextColor = t.done;
+    let badgeBg = t.surface;
+
+    if (pace.status === "spent") {
+      barColor = t.blocked;
+      badgeTextColor = t.blocked;
+      badgeText = "Limit reached";
+    } else if (pace.status === "behind") {
+      barColor = t.blocked;
+      badgeTextColor = t.blocked;
+      badgeText = pace.statusText;
+    } else if (pace.status === "onTrack") {
+      barColor = t.working;
+      badgeTextColor = t.working;
+      badgeText = pace.statusText;
+    } else if (pace.status === "ahead") {
+      barColor = t.done;
+      badgeTextColor = t.done;
+      badgeText = pace.statusText;
+    } else {
+      // unpaced fallback
+      barColor = remaining <= 10 ? t.blocked : remaining <= 30 ? t.working : t.done;
+      badgeTextColor = barColor;
+      badgeText = `${remaining}% left`;
+    }
+
+    const guidePct = pace.guideRemainingPercent != null
+      ? Math.round(clamp(pace.guideRemainingPercent, 1, 99))
+      : null;
 
     return v_flex()
       .w_full()
-      .gap(4)
+      .gap(5)
+      // Top Row: Window Label + Reset countdown pill
       .child(
         h_flex()
           .items_center()
@@ -247,37 +401,106 @@ export default class OpenUsage extends View {
               .gap(6)
               .items_center()
               .child(div().font_semibold().text_size(11.5).text_color(t.foreground).child(label))
-              .when(Boolean(reset), (el) =>
+              .when(Boolean(resetNote), (el) =>
                 el.child(
                   div()
                     .px(5)
                     .py(1)
                     .rounded(3)
-                    .bg(t.border)
+                    .bg(t.surface)
+                    .border(1)
+                    .border_color(t.border)
                     .text_size(10)
                     .text_color(t.muted)
-                    .child(`resets in ${reset}`)
+                    .child(`↻ in ${resetNote}`)
                 )
               )
           )
+          // Right: Pacing Status Badge (OpenUsage style)
+          .child(
+            div()
+              .px(6)
+              .py(1)
+              .rounded(3)
+              .bg(t.surface)
+              .border(1)
+              .border_color(t.border)
+              .text_size(10.5)
+              .font_semibold()
+              .text_color(badgeTextColor)
+              .child(badgeText)
+          )
+      )
+      // Middle Row: Remaining Gauge Track with Linear Pace Guide Marker
+      .child(
+        div()
+          .relative()
+          .w_full()
+          .h(8)
+          .rounded(4)
+          .bg(t.border)
+          .overflow_hidden()
+          .flex_none()
+          // Remaining Gauge Bar (잔여량 게이지)
+          .child(
+            div()
+              .absolute()
+              .left(0)
+              .top(0)
+              .h_full()
+              .w(`${remaining}%`)
+              .rounded(4)
+              .bg(barColor)
+          )
+          // OpenUsage Linear Pace Guide Line (일정 소비 가이드 기준선)
+          .when(guidePct != null, (el) =>
+            el.child(
+              div()
+                .absolute()
+                .left(`${guidePct}%`)
+                .top(0)
+                .h_full()
+                .w(2)
+                .bg(t.foreground)
+                .opacity(0.85)
+            )
+          )
+      )
+      // Bottom Row: Explanatory readout (Actual Remaining vs Pace Guide Expected)
+      .child(
+        h_flex()
+          .items_center()
+          .justify_between()
+          .text_size(10.5)
           .child(
             h_flex()
               .gap(6)
               .items_center()
-              .child(div().font_semibold().text_size(12).text_color(lvl.textColor).child(`${util}%`))
-              .child(div().text_size(10.5).text_color(t.dim).child(`(${rem}% left)`))
+              .child(
+                div()
+                  .font_bold()
+                  .text_color(badgeTextColor)
+                  .child(`${remaining}% remaining`)
+              )
+              .when(guidePct != null, (el) =>
+                el.child(
+                  div()
+                    .text_color(t.dim)
+                    .child(`(Guide: ~${guidePct}% expected)`)
+                )
+              )
           )
-      )
-      .child(this.renderProgressBar(t, util, 6));
+          .child(
+            div()
+              .text_color(t.dim)
+              .child(`${Math.round(used)}% used`)
+          )
+      );
   }
 
   renderClaudeCard(t, key, prov, cx) {
     const data = prov.data;
     const activeAgents = this.getActiveAgentsFor("claude");
-    const peak = data
-      ? Math.max(data.five_hour?.utilization ?? 0, data.seven_day?.utilization ?? 0)
-      : 0;
-    const lvl = statusLevel(t, peak);
 
     return this.renderCardContainer(
       t,
@@ -285,16 +508,15 @@ export default class OpenUsage extends View {
       PROVIDERS[key].name,
       PROVIDERS[key].icon,
       "Official OAuth",
-      lvl,
       prov,
       activeAgents,
       cx,
       [
         data?.five_hour
-          ? this.renderMetricRow(t, "5-Hour Session Limit", data.five_hour)
-          : div().text_size(11).text_color(t.dim).child("5-Hour window: no active quota limit"),
+          ? this.renderPacedMetricRow(t, "5-Hour Session Limit", data.five_hour, PERIODS.session)
+          : div().text_size(11).text_color(t.dim).child("5-Hour Session: full quota available (fresh)"),
         data?.seven_day
-          ? this.renderMetricRow(t, "7-Day Weekly Limit", data.seven_day)
+          ? this.renderPacedMetricRow(t, "7-Day Weekly Limit", data.seven_day, PERIODS.weekly)
           : null,
       ]
     );
@@ -303,10 +525,6 @@ export default class OpenUsage extends View {
   renderCodexCard(t, key, prov, cx) {
     const data = prov.data;
     const activeAgents = this.getActiveAgentsFor("codex");
-    const peak = data
-      ? Math.max(data.five_hour?.utilization ?? 0, data.seven_day?.utilization ?? 0)
-      : 0;
-    const lvl = statusLevel(t, peak);
     const planName = data?.plan ? `Plan ${data.plan.toUpperCase()}` : "ChatGPT Plus/Pro";
 
     return this.renderCardContainer(
@@ -315,16 +533,15 @@ export default class OpenUsage extends View {
       PROVIDERS[key].name,
       PROVIDERS[key].icon,
       planName,
-      lvl,
       prov,
       activeAgents,
       cx,
       [
         data?.five_hour
-          ? this.renderMetricRow(t, "5-Hour Session Limit", data.five_hour)
+          ? this.renderPacedMetricRow(t, "5-Hour Session Limit", data.five_hour, PERIODS.session)
           : null,
         data?.seven_day
-          ? this.renderMetricRow(t, "7-Day Weekly Limit", data.seven_day)
+          ? this.renderPacedMetricRow(t, "7-Day Weekly Limit", data.seven_day, PERIODS.weekly)
           : null,
       ]
     );
@@ -333,28 +550,24 @@ export default class OpenUsage extends View {
   renderAntigravityCard(t, key, prov, cx) {
     const data = prov.data;
     const activeAgents = this.getActiveAgentsFor("antigravity");
-    const peak = data
-      ? Math.max(data.five_hour?.utilization ?? 0, data.seven_day?.utilization ?? 0)
-      : 0;
-    const lvl = statusLevel(t, peak);
     const bucketTitle = data?.bucket ?? "Gemini Models";
 
     const rows = [];
     if (data?.five_hour) {
-      rows.push(this.renderMetricRow(t, `${bucketTitle} (5-Hour)`, data.five_hour));
+      rows.push(this.renderPacedMetricRow(t, `${bucketTitle} (5-Hour)`, data.five_hour, PERIODS.session));
     }
     if (data?.seven_day) {
-      rows.push(this.renderMetricRow(t, `${bucketTitle} (Weekly)`, data.seven_day));
+      rows.push(this.renderPacedMetricRow(t, `${bucketTitle} (Weekly)`, data.seven_day, PERIODS.weekly));
     }
 
     // Secondary buckets (Claude & GPT models quota)
     for (const b of data?.buckets ?? []) {
       if (b.five_hour || b.seven_day) {
         rows.push(
-          div().pt(2).text_size(10.5).font_semibold().text_color(t.muted).child(b.name ?? "Other Models")
+          div().pt(4).text_size(10.5).font_semibold().text_color(t.muted).child(b.name ?? "Other Models")
         );
-        if (b.five_hour) rows.push(this.renderMetricRow(t, "5-Hour", b.five_hour));
-        if (b.seven_day) rows.push(this.renderMetricRow(t, "Weekly", b.seven_day));
+        if (b.five_hour) rows.push(this.renderPacedMetricRow(t, "5-Hour", b.five_hour, PERIODS.session));
+        if (b.seven_day) rows.push(this.renderPacedMetricRow(t, "Weekly", b.seven_day, PERIODS.weekly));
       }
     }
 
@@ -364,7 +577,6 @@ export default class OpenUsage extends View {
       PROVIDERS[key].name,
       PROVIDERS[key].icon,
       "CLI /usage",
-      lvl,
       prov,
       activeAgents,
       cx,
@@ -375,14 +587,6 @@ export default class OpenUsage extends View {
   renderOpencodeCard(t, key, prov, cx) {
     const data = prov.data;
     const activeAgents = this.getActiveAgentsFor("opencode");
-    const peak = data
-      ? Math.max(
-          data.rolling?.utilization ?? 0,
-          data.weekly?.utilization ?? 0,
-          data.monthly?.utilization ?? 0
-        )
-      : 0;
-    const lvl = statusLevel(t, peak);
     const wsName = data?.workspace ? `Workspace: ${data.workspace}` : "OpenCode Go";
 
     return this.renderCardContainer(
@@ -391,19 +595,18 @@ export default class OpenUsage extends View {
       PROVIDERS[key].name,
       PROVIDERS[key].icon,
       wsName,
-      lvl,
       prov,
       activeAgents,
       cx,
       [
-        data?.rolling ? this.renderMetricRow(t, "Rolling Limit", data.rolling) : null,
-        data?.weekly ? this.renderMetricRow(t, "Weekly Limit", data.weekly) : null,
-        data?.monthly ? this.renderMetricRow(t, "Monthly Limit", data.monthly) : null,
+        data?.rolling ? this.renderPacedMetricRow(t, "Rolling Limit", data.rolling, PERIODS.rolling) : null,
+        data?.weekly ? this.renderPacedMetricRow(t, "Weekly Limit", data.weekly, PERIODS.weekly) : null,
+        data?.monthly ? this.renderPacedMetricRow(t, "Monthly Limit", data.monthly, PERIODS.monthly) : null,
       ]
     );
   }
 
-  renderCardContainer(t, key, name, iconPath, planBadge, lvl, prov, activeAgents, cx, metricRows) {
+  renderCardContainer(t, key, name, iconPath, planBadge, prov, activeAgents, cx, metricRows) {
     const isStale = prov.at > 0 && Date.now() - prov.at > PROVIDERS[key].stale;
 
     return v_flex()
@@ -415,7 +618,7 @@ export default class OpenUsage extends View {
       .border_color(t.border)
       .rounded(8)
       .p(14)
-      .gap(10)
+      .gap(12)
       .child(
         // Card Header
         h_flex()
@@ -453,27 +656,19 @@ export default class OpenUsage extends View {
             h_flex()
               .gap(6)
               .items_center()
-              .child(
-                div()
-                  .px(6)
-                  .py(2)
-                  .rounded(4)
-                  .bg(t.surface)
-                  .border(1)
-                  .border_color(t.border)
-                  .child(
-                    h_flex()
-                      .gap(4)
-                      .items_center()
-                      .child(div().size(6).rounded(3).bg(lvl.color))
-                      .child(
-                        div()
-                          .text_size(10.5)
-                          .font_semibold()
-                          .text_color(lvl.textColor)
-                          .child(isStale ? "Stale" : lvl.label)
-                      )
-                  )
+              .when(isStale, (el) =>
+                el.child(
+                  div()
+                    .px(6)
+                    .py(2)
+                    .rounded(4)
+                    .bg(t.surface)
+                    .border(1)
+                    .border_color(t.border)
+                    .text_size(10.5)
+                    .text_color(t.dim)
+                    .child("Stale")
+                )
               )
               .child(
                 div()
@@ -529,10 +724,10 @@ export default class OpenUsage extends View {
             )
         )
       )
-      // Metrics
+      // Metrics with Remaining Gauges and Linear Pace Guide
       .child(
         v_flex()
-          .gap(8)
+          .gap(10)
           .children(metricRows.filter(Boolean))
       )
       // Card Footer
@@ -567,7 +762,7 @@ export default class OpenUsage extends View {
 
   render(cx) {
     const t = theme();
-    const peak = this.getPeakUsage();
+    const overallPacing = this.getOverallPacingSummary(t);
     const earliestReset = this.getEarliestReset();
     const allAgents = agents();
     const isOverlay = Boolean(props()?.overlay);
@@ -610,14 +805,14 @@ export default class OpenUsage extends View {
                           .bg(t.raised)
                           .text_size(10)
                           .text_color(t.muted)
-                          .child("Agent Quota Tracker")
+                          .child("Remaining Quota & Pace Monitor")
                       )
                   )
                   .child(
                     div()
                       .text_size(11)
                       .text_color(t.dim)
-                      .child("Observability across Claude, Codex, Antigravity & OpenCode")
+                      .child("Tracks remaining quota against constant linear burn rate (OpenUsage engine)")
                   )
               )
           )
@@ -670,65 +865,88 @@ export default class OpenUsage extends View {
               )
           )
       )
-      // Glanceable Stats Strip
+      // Visual Pacing Guide Legend Strip
       .child(
         h_flex()
           .px(18)
-          .py(8)
+          .py(7)
           .bg(t.surface)
           .border_b(1)
           .border_color(t.border)
-          .gap(20)
+          .justify_between()
           .items_center()
           .child(
             h_flex()
-              .gap(6)
-              .items_center()
-              .child(div().size(6).rounded(3).bg(t.done))
-              .child(div().text_size(11).text_color(t.muted).child("4 Tracked Providers"))
-          )
-          .child(
-            h_flex()
-              .gap(6)
-              .items_center()
-              .child(div().size(6).rounded(3).bg(allAgents.length > 0 ? t.working : t.dim))
-              .child(
-                div()
-                  .text_size(11)
-                  .text_color(t.muted)
-                  .child(`${allAgents.length} Herdr Agents Active`)
-              )
-          )
-          .child(
-            h_flex()
-              .gap(6)
+              .gap(16)
               .items_center()
               .child(
-                div()
-                  .size(6)
-                  .rounded(3)
-                  .bg(statusLevel(t, peak.peak).color)
+                h_flex()
+                  .gap(6)
+                  .items_center()
+                  .child(div().size(6).rounded(3).bg(overallPacing.color))
+                  .child(div().text_size(11).font_semibold().text_color(overallPacing.color).child(overallPacing.label))
               )
               .child(
-                div()
-                  .text_size(11)
-                  .text_color(t.muted)
-                  .child(`Peak Quota: ${peak.peak}% (${peak.name || "None"})`)
+                h_flex()
+                  .gap(6)
+                  .items_center()
+                  .child(div().size(6).rounded(3).bg(allAgents.length > 0 ? t.working : t.dim))
+                  .child(
+                    div()
+                      .text_size(11)
+                      .text_color(t.muted)
+                      .child(`${allAgents.length} Herdr Agents Active`)
+                  )
               )
-          )
-          .when(Boolean(earliestReset), (el) =>
-            el.child(
-              h_flex()
-                .gap(6)
-                .items_center()
-                .child(div().size(6).rounded(3).bg(t.accent))
-                .child(
-                  div()
-                    .text_size(11)
-                    .text_color(t.muted)
-                    .child(`Next Reset in ${earliestReset}`)
+              .when(Boolean(earliestReset), (el) =>
+                el.child(
+                  h_flex()
+                    .gap(6)
+                    .items_center()
+                    .child(div().size(6).rounded(3).bg(t.accent))
+                    .child(
+                      div()
+                        .text_size(11)
+                        .text_color(t.muted)
+                        .child(`Next Reset in ${earliestReset}`)
+                    )
                 )
-            )
+              )
+          )
+          // Right: Pace Guide Indicator Legend
+          .child(
+            h_flex()
+              .gap(12)
+              .items_center()
+              .text_size(10.5)
+              .child(
+                h_flex()
+                  .gap(4)
+                  .items_center()
+                  .child(div().w(2).h(10).bg(t.foreground).opacity(0.85))
+                  .child(div().text_color(t.dim).child("Pace Guide"))
+              )
+              .child(
+                h_flex()
+                  .gap(4)
+                  .items_center()
+                  .child(div().size(6).rounded(3).bg(t.done))
+                  .child(div().text_color(t.dim).child("Ahead (안전)"))
+              )
+              .child(
+                h_flex()
+                  .gap(4)
+                  .items_center()
+                  .child(div().size(6).rounded(3).bg(t.working))
+                  .child(div().text_color(t.dim).child("On Track (적정)"))
+              )
+              .child(
+                h_flex()
+                  .gap(4)
+                  .items_center()
+                  .child(div().size(6).rounded(3).bg(t.blocked))
+                  .child(div().text_color(t.dim).child("Burning Fast (초과 위험)"))
+              )
           )
       )
       // Main Body: Provider Cards Grid
