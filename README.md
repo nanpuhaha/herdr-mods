@@ -361,7 +361,12 @@ export async function test_example() {
   - 계정별 인증 소스(Keychain Service 명칭, 커스텀 `auth.json` 경로, CLI 등)를 독립적으로 지정
 - **왼쪽 사이드바(Sidebar) 전용 컴팩트 모드**:
   - Herdr의 기본 `main` 레이아웃 왼쪽 사이드바(`sidebar-lists`)의 `spaces`, `agents` 바로 아래 `usages` 블록으로 상시 배치 지원
+  - **5시간 세션 및 7일 주간 한도 동시 표시**: 사이드바 및 카드 뷰에서 단일 게이지만 번갈아 보는 것이 아니라 `5-Hour` 잔여량과 `Weekly` 잔여량을 나란히 실시간 동시 표시
   - 사이드바 환경에서는 컴팩트한 게이지 바와 리셋 시간, 페이스 상태 닷(🟢/🟡/🔴)으로 표시되며 클릭 시 전체 대시보드 팝업 오버레이 제공
+- **지능형 공유 메모리 캐싱 및 Open 재호출 방지 (60s Cooldown)**:
+  - `shared("openusage.accounts_cache")`를 통해 사이드바, 탭, 오버레이 팝업 인스턴스 간 쿼터 데이터를 실시간 공유
+  - 최근 60초 이내에 갱신된 내역이 있을 경우, 사이드바에서 `Open`을 누르거나 창을 열 때마다 불필요한 백엔드 API/CLI 재호출이 발생하지 않고 즉시 캐시된 데이터를 화면에 표시
+  - 사용자가 명시적으로 상단 `Refresh ↻` 버튼을 누르면 즉시 강제 갱신(Force Refresh) 수행
 - **설정 및 계정 관리 화면 (`⚙ Settings / Accounts`)**:
   - 대시보드 상단 ⚙️ 버튼을 통해 GUI 상에서 등록된 계정 활성화/비활성화 토글, 삭제 및 프리셋 계정 추가 가능
   - 영구 설정 파일: `~/.config/herdr-app/openusage-accounts.json`을 통해 텍스트 에디터로 직접 계정 목록 및 옵션 편집 가능
