@@ -343,3 +343,54 @@ export async function test_example() {
   "content": { "mod": "herdr-quota" }
 }
 ```
+
+## 14. 신규 커스텀 모드: OpenUsage (`openusage`)
+
+[OpenUsage](https://github.com/robinebers/openusage) 스타일로 다양한 AI 코딩 에이전트(Claude Code, OpenAI Codex, Google Antigravity, OpenCode Go)의 실시간 쿼터·사용량·리셋 타이머를 한눈에 볼 수 있는 커스텀 Herdr 모드입니다.
+
+### 14.1 주요 기능
+- **4대 AI 프로바이더 쿼터 통합 모니터링**:
+  - **Claude Code**: Keychain OAuth 토큰 기반 5시간 세션 및 7일 주간 한도/리셋 시각 조회
+  - **OpenAI Codex**: `~/.codex/auth.json` ChatGPT 토큰 기반 5시간 세션 및 7일 주간 한도/플랜(Plus/Pro) 조회
+  - **Google Antigravity**: `agy -p /usage` 연동 (Gemini Models 및 Claude/GPT models 서브 버킷 쿼터 분리 표시)
+  - **OpenCode Go**: `opencode api` 기반 Rolling, Weekly, Monthly 한도 조회
+- **Herdr 실행 중인 에이전트 실시간 연동**:
+  - `agents()` API를 통해 현재 활성화된 에이전트(예: Antigravity t5 working)를 프로바이더 카드에 표시하고 클릭 한 번으로 포커스 이동 (`Focus →`)
+- **글랜서블(Glanceable) 대시보드 UI**:
+  - 상단 요약 바: 모니터링 중인 프로바이더 수, 실행 중인 Herdr 에이전트 수, 피크 사용량(Peak Quota), 가장 빠른 리셋 타이머
+  - 프로바이더별 카드: 공식 SVG 아이콘, 플랜 뱃지, 건강 상태 뱃지(Healthy/Warning/Critical/Stale), 프로그레스 바 및 잔여 쿼터(%), 리셋 카운트다운
+  - 개별 및 전체 새로고침(Spin 애니메이션 지원) 및 비동기 캐싱(장애 발생 시 stale 데이터로 안전 복구)
+
+### 14.2 파일 구조
+```
+openusage/
+├── mod.json          # 모드 설정 (다이얼로그 크기 및 타이틀 정의)
+├── main.js           # GPUI 컴포넌트 뷰 및 라이프사이클/타이머/이벤트 핸들링
+├── helpers/          # 프로바이더별 CLI/API 데이터 수집기
+│   ├── antigravity.py
+│   ├── claude.py
+│   ├── codex.py
+│   └── opencode.py
+└── icons/            # SVG 아이콘
+    ├── openusage.svg
+    └── refresh.svg
+```
+
+### 14.3 실행 및 배치 방법
+- **다이얼로그 오버레이로 열기**:
+  ```bash
+  herdr-app do mod.open '{"name":"openusage"}'
+  ```
+- **새 탭으로 열기**:
+  ```bash
+  herdr-app do tab.new '{"name":"OpenUsage","mod":"openusage"}'
+  ```
+- **현재 펜 분할하여 나란히 열기**:
+  ```bash
+  herdr-app do pane.split '{"direction":"right","mod":"openusage"}'
+  ```
+- **모드 검증 (GPUI 테스트)**:
+  ```bash
+  herdr-app check ~/.config/herdr-app/mods/openusage
+  ```
+

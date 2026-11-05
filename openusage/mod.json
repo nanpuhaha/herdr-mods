@@ -1,0 +1,9 @@
+{
+  "title": "OpenUsage",
+  "place": "none",
+  "overlay": {
+    "kind": "dialog",
+    "width": 920,
+    "height": 660
+  }
+}
