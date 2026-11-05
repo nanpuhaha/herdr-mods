@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { agents, theme, run, exec, appHome, props, closeOverlay, shared, setShared } from "herdr";
+import { agents, theme, run, exec, appHome, props, closeOverlay, shared, setShared, layout } from "herdr";
 
 const PROVIDER_METAS = {
   claude: {
@@ -66,6 +66,25 @@ function updateSharedCache(accId, state) {
     const current = getSharedCache();
     setShared(CACHE_KEY, { ...current, [accId]: state });
   } catch {}
+}
+
+function findNode(node, id) {
+  if (node?.id === id) return node;
+  for (const child of node?.children ?? []) {
+    const found = findNode(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function getSidebarWidth() {
+  try {
+    const root = layout();
+    const sb = findNode(root, "sidebar");
+    const px = sb?.size?.px;
+    if (typeof px === "number" && Number.isFinite(px) && px > 0) return px;
+  } catch {}
+  return 268;
 }
 
 function clamp(value, min = 0, max = 100) {
@@ -778,33 +797,89 @@ export default class OpenUsage extends View {
   }
 
   /**
-   * Compact Sidebar View (Displays 5시간 AND 주간 simultaneously for each account)
+   * Responsive Sidebar View: Adapts layout based on sidebar width
+   * - Rail (< 140px): Ultra-compact icon strip with status dots & hover tooltips
+   * - Narrow (140px ~ 230px): Compact stacked rows with short labels (5h, 7d)
+   * - Standard (230px ~ 320px): Full stacked dual rows (5시간, 주간)
+   * - Wide (>= 320px): Dual columns side-by-side (5시간 | 주간) on a single row!
    */
   renderSidebar(cx, t) {
-    const anyLoading = this.isAnyLoading();
-    const overall = this.getOverallPacingSummary(t);
+    const sbWidth = getSidebarWidth();
+    const isRail = sbWidth < 140;
+    const isNarrow = sbWidth >= 140 && sbWidth < 230;
+    const isWide = sbWidth >= 320;
+    const mode = isRail ? "rail" : isNarrow ? "narrow" : isWide ? "wide" : "standard";
 
+    const overall = this.getOverallPacingSummary(t);
+    const anyLoading = this.isAnyLoading();
+
+    // 1. Ultra-Narrow Rail Mode (< 140px, e.g. 44px ~ 76px)
+    if (isRail) {
+      return v_flex()
+        .size_full()
+        .bg(t.chrome)
+        .border_t(1)
+        .border_color(t.border)
+        .items_center()
+        .py(6)
+        .gap(8)
+        .child(
+          div()
+            .p(4)
+            .rounded(4)
+            .cursor_pointer()
+            .hover((s) => s.bg(t.hover))
+            .tooltip("OpenUsage · Usages (Click to open)")
+            .on_click(() => run("mod.open", { name: "openusage" }))
+            .child(svg("mods/openusage/icons/openusage.svg").size(16).text_color(t.accent))
+        )
+        .child(
+          v_flex()
+            .flex_1()
+            .overflow_y_scrollbar()
+            .w_full()
+            .items_center()
+            .gap(6)
+            .children(
+              this.accounts
+                .filter((acc) => acc.enabled !== false)
+                .map((acc) => this.renderSidebarRailAccount(t, acc, cx))
+            )
+        );
+    }
+
+    // 2. Standard / Wide / Narrow Sidebar Modes
     return v_flex()
       .size_full()
       .bg(t.chrome)
+      .border_t(1)
+      .border_color(t.border)
       .text_color(t.foreground)
       .text_size(11)
-      // Sidebar Header
+      // Responsive Sidebar Header
       .child(
         h_flex()
-          .px(10)
-          .py(6)
+          .px(isNarrow ? 6 : 10)
+          .py(isNarrow ? 4 : 6)
           .items_center()
           .justify_between()
           .border_b(1)
           .border_color(t.border)
           .child(
             h_flex()
-              .gap(6)
+              .gap(isNarrow ? 4 : 6)
               .items_center()
               .child(svg("mods/openusage/icons/openusage.svg").size(14).text_color(t.accent))
-              .child(div().font_bold().text_size(11.5).child("Usages"))
+              .child(div().font_bold().text_size(isNarrow ? 10.5 : 11.5).child("Usages"))
               .child(div().size(6).rounded(3).bg(overall.color))
+              .when(isWide, (el) =>
+                el.child(
+                  div()
+                    .text_size(9)
+                    .text_color(t.dim)
+                    .child(`(${sbWidth}px · ${overall.label})`)
+                )
+              )
           )
           .child(
             h_flex()
@@ -812,10 +887,11 @@ export default class OpenUsage extends View {
               .items_center()
               .child(
                 div()
-                  .p(3)
+                  .p(2.5)
                   .rounded(3)
                   .cursor_pointer()
                   .hover((s) => s.bg(t.hover))
+                  .tooltip("Refresh usage")
                   .on_click((_e, cx) => this.refreshAll(cx))
                   .child(
                     anyLoading
@@ -825,37 +901,87 @@ export default class OpenUsage extends View {
               )
               .child(
                 div()
-                  .px(5)
+                  .px(isNarrow ? 4 : 6)
                   .py(2)
                   .rounded(3)
                   .cursor_pointer()
-                  .text_size(10)
+                  .text_size(isNarrow ? 9.5 : 10)
                   .text_color(t.muted)
                   .hover((s) => s.bg(t.hover))
                   .on_click(() => run("mod.open", { name: "openusage" }))
-                  .child("↗ Open")
+                  .child(isNarrow ? "↗" : "↗ Open")
               )
           )
       )
-      // Compact Accounts List with 5시간 & 주간 simultaneous meters
+      // Accounts List (Responsive)
       .child(
         v_flex()
           .flex_1()
           .overflow_y_scrollbar()
-          .p(6)
-          .gap(6)
+          .p(isNarrow ? 4 : 6)
+          .gap(isNarrow ? 4 : 6)
           .children(
             this.accounts
               .filter((acc) => acc.enabled !== false)
-              .map((acc) => this.renderSidebarAccountRow(t, acc, cx))
+              .map((acc) => this.renderSidebarAccountRow(t, acc, cx, mode))
           )
+      );
+  }
+
+  /**
+   * Ultra-compact rail icon for sidebar width < 140px
+   */
+  renderSidebarRailAccount(t, acc, cx) {
+    const provMeta = PROVIDER_METAS[acc.provider] ?? PROVIDER_METAS.antigravity;
+    const state = this.accountData[acc.id] ?? { data: null };
+    const data = state.data;
+
+    let overallDot = t.done;
+    const summaries = [];
+    if (data) {
+      const checkPace = (w, period, name) => {
+        if (!w) return;
+        const res = evaluatePace({ used: w.utilization ?? 0, resetsAt: w.resets_at, periodSeconds: period });
+        if (res.status === "spent" || res.status === "behind") overallDot = t.blocked;
+        else if (res.status === "onTrack" && overallDot !== t.blocked) overallDot = t.working;
+        summaries.push(`• ${name}: ${Math.round(res.remainingPercent)}% (${countdown(w.resets_at) || "idle"})`);
+      };
+      if (data.five_hour) checkPace(data.five_hour, PERIODS.session, "5시간");
+      if (data.seven_day) checkPace(data.seven_day, PERIODS.weekly, "주간");
+      if (data.rolling) checkPace(data.rolling, PERIODS.rolling, "24h");
+      if (data.monthly) checkPace(data.monthly, PERIODS.monthly, "월간");
+      for (const b of data.buckets ?? []) {
+        if (b.five_hour) checkPace(b.five_hour, PERIODS.session, `${b.name || "Cld"} 5h`);
+        if (b.seven_day) checkPace(b.seven_day, PERIODS.weekly, `${b.name || "Cld"} 주간`);
+      }
+    }
+
+    const tip = [
+      `${acc.name} (${acc.label || "Default"})`,
+      ...summaries,
+      "Click to open dashboard",
+    ].join("\n");
+
+    return div()
+      .p(6)
+      .rounded(6)
+      .cursor_pointer()
+      .hover((s) => s.bg(t.hover))
+      .tooltip(tip)
+      .on_click(() => run("mod.open", { name: "openusage" }))
+      .child(
+        v_flex()
+          .items_center()
+          .gap(3)
+          .child(svg(provMeta.icon).size(16))
+          .child(div().size(5).rounded(2.5).bg(overallDot))
       );
   }
 
   /**
    * Compact mini gauge row for the sidebar & small screens (shows label, remaining bar, pace marker, % and reset note)
    */
-  renderSidebarWindowGauge(t, label, windowData, periodSeconds) {
+  renderSidebarWindowGauge(t, label, windowData, periodSeconds, compact = false) {
     const isAvailable = Boolean(windowData);
     const used = isAvailable ? clamp(windowData.utilization ?? 0) : 0;
     const resetsAt = isAvailable ? windowData.resets_at : null;
@@ -878,16 +1004,21 @@ export default class OpenUsage extends View {
     // Minimum 4px indicator if 0% remaining so an exhausted meter never looks like an empty/missing bar
     const barWidth = rem != null ? (rem <= 0 ? "4px" : `${rem}%`) : "0%";
 
+    const labelW = compact ? 28 : 46;
+    const remW = compact ? 26 : 28;
+    const resetW = compact ? 28 : 34;
+
     return h_flex()
-      .gap(6)
+      .gap(compact ? 4 : 5)
       .items_center()
-      .w_full()
-      // Window Label: e.g. "5시간", "주간", "Gem 5h", etc.
+      .flex_1()
+      .min_w(0)
+      // Window Label: e.g. "5시간", "주간", "5h", "7d", etc.
       .child(
         div()
-          .w(48)
+          .w(labelW)
           .flex_none()
-          .text_size(9)
+          .text_size(compact ? 8.5 : 9)
           .font_medium()
           .text_color(t.muted)
           .truncate()
@@ -898,7 +1029,7 @@ export default class OpenUsage extends View {
         div()
           .relative()
           .flex_1()
-          .h(5)
+          .h(compact ? 4 : 5)
           .rounded(2.5)
           .bg(t.border)
           .overflow_hidden()
@@ -930,66 +1061,48 @@ export default class OpenUsage extends View {
       // Percentage (Remaining %)
       .child(
         div()
-          .w(28)
+          .w(remW)
           .flex_none()
           .text_right()
           .font_bold()
-          .text_size(9.5)
+          .text_size(compact ? 8.5 : 9.5)
           .text_color(dotColor)
           .child(rem != null ? `${rem}%` : "--%")
       )
-      // Reset Countdown (Always rendered with fixed width for rock-solid vertical alignment across all rows)
+      // Reset Countdown
       .child(
         div()
-          .w(36)
+          .w(resetW)
           .flex_none()
           .text_right()
-          .text_size(8.5)
+          .text_size(8)
           .text_color(t.dim)
           .truncate()
           .child(resetNote)
       );
   }
 
-  renderSidebarAccountRow(t, acc, cx) {
+  renderSidebarAccountRow(t, acc, cx, mode = "standard") {
     const provMeta = PROVIDER_METAS[acc.provider] ?? PROVIDER_METAS.antigravity;
     const state = this.accountData[acc.id] ?? { data: null };
     const data = state.data;
-
-    // Gather 5시간 and 주간 windows to show SIMULTANEOUSLY in small screen / sidebar
-    const windowRows = [];
-
-    if (acc.provider === "claude") {
-      windowRows.push(this.renderSidebarWindowGauge(t, "5시간", data?.five_hour, PERIODS.session));
-      windowRows.push(this.renderSidebarWindowGauge(t, "주간", data?.seven_day, PERIODS.weekly));
-    } else if (acc.provider === "codex") {
-      windowRows.push(this.renderSidebarWindowGauge(t, "5시간", data?.five_hour, PERIODS.session));
-      windowRows.push(this.renderSidebarWindowGauge(t, "주간", data?.seven_day, PERIODS.weekly));
-    } else if (acc.provider === "antigravity") {
-      windowRows.push(this.renderSidebarWindowGauge(t, "Gem 5h", data?.five_hour, PERIODS.session));
-      windowRows.push(this.renderSidebarWindowGauge(t, "Gem 주간", data?.seven_day, PERIODS.weekly));
-      const altBucket = data?.buckets?.find((b) => b.five_hour || b.seven_day);
-      if (altBucket) {
-        if (altBucket.five_hour) windowRows.push(this.renderSidebarWindowGauge(t, "Cld 5h", altBucket.five_hour, PERIODS.session));
-        if (altBucket.seven_day) windowRows.push(this.renderSidebarWindowGauge(t, "Cld 주간", altBucket.seven_day, PERIODS.weekly));
-      }
-    } else if (acc.provider === "opencode") {
-      windowRows.push(this.renderSidebarWindowGauge(t, "24h", data?.rolling, PERIODS.rolling));
-      windowRows.push(this.renderSidebarWindowGauge(t, "주간", data?.weekly, PERIODS.weekly));
-      if (data?.monthly) windowRows.push(this.renderSidebarWindowGauge(t, "월간", data.monthly, PERIODS.monthly));
-    } else {
-      windowRows.push(this.renderSidebarWindowGauge(t, "5시간", data?.five_hour, PERIODS.session));
-      windowRows.push(this.renderSidebarWindowGauge(t, "주간", data?.seven_day, PERIODS.weekly));
-    }
+    const isNarrow = mode === "narrow";
+    const isWide = mode === "wide";
 
     // Determine overall account dot color (most critical status)
     let overallDot = t.done;
+    let worstPaceStatus = "ahead";
     if (data) {
       const checkPace = (w, period) => {
         if (!w) return;
         const res = evaluatePace({ used: w.utilization ?? 0, resetsAt: w.resets_at, periodSeconds: period });
-        if (res.status === "spent" || res.status === "behind") overallDot = t.blocked;
-        else if (res.status === "onTrack" && overallDot !== t.blocked) overallDot = t.working;
+        if (res.status === "spent" || res.status === "behind") {
+          overallDot = t.blocked;
+          worstPaceStatus = "behind";
+        } else if (res.status === "onTrack" && overallDot !== t.blocked) {
+          overallDot = t.working;
+          if (worstPaceStatus !== "behind") worstPaceStatus = "onTrack";
+        }
       };
       if (data.five_hour) checkPace(data.five_hour, PERIODS.session);
       if (data.seven_day) checkPace(data.seven_day, PERIODS.weekly);
@@ -1001,9 +1114,79 @@ export default class OpenUsage extends View {
       }
     }
 
+    // Helper to render dual meters side-by-side in 2 columns (Wide mode >= 320px)
+    const renderDualSideBySide = (label1, data1, period1, label2, data2, period2) => {
+      return h_flex()
+        .w_full()
+        .gap(6)
+        .items_center()
+        .child(this.renderSidebarWindowGauge(t, label1, data1, period1, true))
+        .child(div().w(1).h(10).bg(t.border).opacity(0.8))
+        .child(this.renderSidebarWindowGauge(t, label2, data2, period2, true));
+    };
+
+    const windowElements = [];
+
+    if (isWide) {
+      // In Wide mode (>= 320px), place 5시간 & 주간 SIDE-BY-SIDE in 2 columns!
+      if (acc.provider === "claude") {
+        windowElements.push(renderDualSideBySide("5시간", data?.five_hour, PERIODS.session, "주간", data?.seven_day, PERIODS.weekly));
+      } else if (acc.provider === "codex") {
+        windowElements.push(renderDualSideBySide("5시간", data?.five_hour, PERIODS.session, "주간", data?.seven_day, PERIODS.weekly));
+      } else if (acc.provider === "antigravity") {
+        windowElements.push(renderDualSideBySide("Gem 5h", data?.five_hour, PERIODS.session, "Gem 주간", data?.seven_day, PERIODS.weekly));
+        const altBucket = data?.buckets?.find((b) => b.five_hour || b.seven_day);
+        if (altBucket) {
+          windowElements.push(renderDualSideBySide("Cld 5h", altBucket.five_hour, PERIODS.session, "Cld 주간", altBucket.seven_day, PERIODS.weekly));
+        }
+      } else if (acc.provider === "opencode") {
+        windowElements.push(renderDualSideBySide("24h", data?.rolling, PERIODS.rolling, "주간", data?.weekly, PERIODS.weekly));
+        if (data?.monthly) {
+          windowElements.push(this.renderSidebarWindowGauge(t, "월간", data.monthly, PERIODS.monthly, false));
+        }
+      } else {
+        windowElements.push(renderDualSideBySide("5시간", data?.five_hour, PERIODS.session, "주간", data?.seven_day, PERIODS.weekly));
+      }
+    } else {
+      // In Standard (< 320px) and Narrow (< 230px) modes: stacked 2-row layout
+      const l5h = isNarrow ? "5h" : "5시간";
+      const lWk = isNarrow ? "7d" : "주간";
+      const lG5h = isNarrow ? "G-5h" : "Gem 5h";
+      const lGWk = isNarrow ? "G-7d" : "Gem 주간";
+      const lC5h = isNarrow ? "C-5h" : "Cld 5h";
+      const lCWk = isNarrow ? "C-7d" : "Cld 주간";
+      const l24h = isNarrow ? "24h" : "24h";
+      const lMo = isNarrow ? "월" : "월간";
+
+      if (acc.provider === "claude") {
+        windowElements.push(this.renderSidebarWindowGauge(t, l5h, data?.five_hour, PERIODS.session, isNarrow));
+        windowElements.push(this.renderSidebarWindowGauge(t, lWk, data?.seven_day, PERIODS.weekly, isNarrow));
+      } else if (acc.provider === "codex") {
+        windowElements.push(this.renderSidebarWindowGauge(t, l5h, data?.five_hour, PERIODS.session, isNarrow));
+        windowElements.push(this.renderSidebarWindowGauge(t, lWk, data?.seven_day, PERIODS.weekly, isNarrow));
+      } else if (acc.provider === "antigravity") {
+        windowElements.push(this.renderSidebarWindowGauge(t, lG5h, data?.five_hour, PERIODS.session, isNarrow));
+        windowElements.push(this.renderSidebarWindowGauge(t, lGWk, data?.seven_day, PERIODS.weekly, isNarrow));
+        const altBucket = data?.buckets?.find((b) => b.five_hour || b.seven_day);
+        if (altBucket) {
+          if (altBucket.five_hour) windowElements.push(this.renderSidebarWindowGauge(t, lC5h, altBucket.five_hour, PERIODS.session, isNarrow));
+          if (altBucket.seven_day) windowElements.push(this.renderSidebarWindowGauge(t, lCWk, altBucket.seven_day, PERIODS.weekly, isNarrow));
+        }
+      } else if (acc.provider === "opencode") {
+        windowElements.push(this.renderSidebarWindowGauge(t, l24h, data?.rolling, PERIODS.rolling, isNarrow));
+        windowElements.push(this.renderSidebarWindowGauge(t, lWk, data?.weekly, PERIODS.weekly, isNarrow));
+        if (data?.monthly) windowElements.push(this.renderSidebarWindowGauge(t, lMo, data.monthly, PERIODS.monthly, isNarrow));
+      } else {
+        windowElements.push(this.renderSidebarWindowGauge(t, l5h, data?.five_hour, PERIODS.session, isNarrow));
+        windowElements.push(this.renderSidebarWindowGauge(t, lWk, data?.seven_day, PERIODS.weekly, isNarrow));
+      }
+    }
+
+    const badgeLabel = worstPaceStatus === "behind" ? "Burning Fast" : worstPaceStatus === "onTrack" ? "On Track" : "Ahead";
+
     return v_flex()
-      .p(7)
-      .gap(5)
+      .p(isNarrow ? 5 : isWide ? 8 : 7)
+      .gap(isNarrow ? 3 : 5)
       .rounded(6)
       .bg(t.surface)
       .border(1)
@@ -1020,11 +1203,11 @@ export default class OpenUsage extends View {
             h_flex()
               .gap(5)
               .items_center()
-              .child(svg(provMeta.icon).size(13))
+              .child(svg(provMeta.icon).size(isNarrow ? 12 : 13))
               .child(
                 div()
                   .font_semibold()
-                  .text_size(10.5)
+                  .text_size(isNarrow ? 9.5 : 10.5)
                   .truncate()
                   .child(acc.label ? `${acc.name} (${acc.label})` : acc.name)
               )
@@ -1033,14 +1216,27 @@ export default class OpenUsage extends View {
             h_flex()
               .gap(4)
               .items_center()
+              .when(isWide, (el) =>
+                el.child(
+                  div()
+                    .px(4)
+                    .py(1)
+                    .rounded(3)
+                    .bg(t.raised)
+                    .text_size(9)
+                    .font_semibold()
+                    .text_color(overallDot)
+                    .child(badgeLabel)
+                )
+              )
               .child(div().size(5).rounded(3).bg(overallDot))
           )
       )
-      // Dual Gauges: 5시간 and 주간 simultaneously
+      // Dual Gauges: Side-by-side on wide sidebars, stacked on standard/narrow
       .child(
         v_flex()
-          .gap(3)
-          .children(windowRows.filter(Boolean))
+          .gap(isNarrow ? 2.5 : 3.5)
+          .children(windowElements.filter(Boolean))
       );
   }
 
