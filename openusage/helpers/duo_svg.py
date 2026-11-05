@@ -1,70 +1,128 @@
 #!/usr/bin/env python3
 """
-iPhone Duo Style Continuous Arch Gauge Generator for OpenUsage.
-Generates 0% ~ 100% cached SVG widgets for sidebar rail view (< 140px).
-
-Visual Design:
-- Single continuous horseshoe/arch from 7 o'clock (125°) to 5 o'clock (415° / 55°)
-- 0%: Empty track
-- 16%: Fills from 7 o'clock to ~8:30 (Red)
-- 50%: Fills from 7 o'clock to 12 o'clock top (Amber)
-- 100%: Fills entire arch to 5 o'clock (Emerald)
+Status-Trio Style Dual Arc Gauge Generator for OpenUsage.
+Faithfully implements https://github.com/lingyired/status-trio geometry:
+- Upper Wide Arc (batteryArc): Horseshoe arc with top gap for 5h (or 24h) percentage.
+  Left arm (148.69° -> 234.40°), Right arm (305.60° -> 391.31°).
+  Fills evenly along the visible arc (0~50% on left, 50~100% on right).
+- Lower Smile Arc (volumeArc): Bottom smile arc for 7d weekly percentage.
+  Spans from 121.82° across 6 o'clock (90°) to 59.12°.
+  Fills from left to right as 7d quota remains.
 - Colors:
   - <= 20%: #ef4444 (Vibrant Red)
   - <= 50%: #f59e0b (Vibrant Amber/Yellow)
   - > 50%: #10b981 (Vibrant Emerald/Green)
-- 4 Bottom Pace Dots along the bottom 70° opening
 """
 import sys
 import os
 import math
 
-def generate_arc_svg_content(p_percent=50.0):
-    cx, cy, r = 24, 24, 17
-    to_rad = math.pi / 180.0
-    p = max(0.0, min(100.0, float(p_percent)))
+# StatusIconGeometry constants
+CX = 59.5
+CY = 61.487
+R = 51.5
+TO_RAD = math.pi / 180.0
+TRACK_COLOR = "#3f3f46"
 
-    # Color calculation matching gauge & text
+def get_color(p):
     if p <= 20.0:
-        color = "#ef4444"
+        return "#ef4444"
     elif p <= 50.0:
-        color = "#f59e0b"
+        return "#f59e0b"
     else:
-        color = "#10b981"
+        return "#10b981"
 
-    track_color = "#3f3f46"
+def generate_upper_svg(p_percent=50.0):
+    p = max(0.0, min(100.0, float(p_percent)))
+    color = get_color(p)
 
-    # Arch from 125° to 415° (span 290°)
-    x_start = cx + r * math.cos(125 * to_rad)
-    y_start = cy + r * math.sin(125 * to_rad)
-    x_end = cx + r * math.cos(415 * to_rad)
-    y_end = cy + r * math.sin(415 * to_rad)
+    paths = []
+    # Left and Right tracks with top gap
+    # Left: 148.69° to 234.40° (start: 15.50, 88.25 -> end: 29.52, 19.61)
+    paths.append(f'<path d="M 15.50 88.25 A 51.5 51.5 0 0 1 29.52 19.61" fill="none" stroke="{TRACK_COLOR}" stroke-width="8" stroke-linecap="round" />')
+    # Right: 305.60° to 391.31° (start: 89.48, 19.61 -> end: 103.50, 88.25)
+    paths.append(f'<path d="M 89.48 19.61 A 51.5 51.5 0 0 1 103.50 88.25" fill="none" stroke="{TRACK_COLOR}" stroke-width="8" stroke-linecap="round" />')
 
-    track_path = f'<path d="M {x_start:.2f} {y_start:.2f} A 17 17 0 1 1 {x_end:.2f} {y_end:.2f}" fill="none" stroke="{track_color}" stroke-width="2.6" stroke-linecap="round" />'
-
-    prog_path = ""
+    # Progress Fill in split mode (0-50% left arm, 50-100% right arm)
     if p > 0.5:
-        span = 290.0 * (p / 100.0)
-        ang = 125.0 + span
-        x_prog = cx + r * math.cos(ang * to_rad)
-        y_prog = cy + r * math.sin(ang * to_rad)
-        large_arc = 1 if span > 180.0 else 0
-        prog_path = f'<path d="M {x_start:.2f} {y_start:.2f} A 17 17 0 {large_arc} 1 {x_prog:.2f} {y_prog:.2f}" fill="none" stroke="{color}" stroke-width="2.6" stroke-linecap="round" />'
+        if p <= 50.0:
+            sw = (p / 50.0) * 85.71
+            end_ang = 148.69 + sw
+            ex = CX + R * math.cos(end_ang * TO_RAD)
+            ey = CY + R * math.sin(end_ang * TO_RAD)
+            paths.append(f'<path d="M 15.50 88.25 A 51.5 51.5 0 0 1 {ex:.2f} {ey:.2f}" fill="none" stroke="{color}" stroke-width="8" stroke-linecap="round" />')
+        else:
+            paths.append(f'<path d="M 15.50 88.25 A 51.5 51.5 0 0 1 29.52 19.61" fill="none" stroke="{color}" stroke-width="8" stroke-linecap="round" />')
+            sw = ((p - 50.0) / 50.0) * 85.71
+            end_ang = 305.60 + sw
+            ex = CX + R * math.cos(end_ang * TO_RAD)
+            ey = CY + R * math.sin(end_ang * TO_RAD)
+            paths.append(f'<path d="M 89.48 19.61 A 51.5 51.5 0 0 1 {ex:.2f} {ey:.2f}" fill="none" stroke="{color}" stroke-width="8" stroke-linecap="round" />')
 
-    # 4 Bottom Pace Dots: angles 107°, 96°, 84°, 73°
-    dot_angles = [107, 96, 84, 73]
-    lit_count = 4 if p >= 75 else (3 if p >= 50 else (2 if p >= 25 else (1 if p > 0 else 0)))
-    dots = []
-    for i, ang in enumerate(dot_angles):
-        dx = cx + r * math.cos(ang * to_rad)
-        dy = cy + r * math.sin(ang * to_rad)
-        fill = color if i < lit_count else track_color
-        dots.append(f'  <circle cx="{dx:.2f}" cy="{dy:.2f}" r="1.2" fill="{fill}" />')
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+{chr(10).join(paths)}
+</svg>'''
 
-    return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
-  {track_path}
-  {prog_path}
-{chr(10).join(dots)}
+def generate_lower_svg(p_percent=50.0):
+    p = max(0.0, min(100.0, float(p_percent)))
+    color = get_color(p)
+
+    paths = []
+    # Smile track: 121.82° to 59.12° (start: 32.35, 105.25 -> end: 85.93, 105.69)
+    paths.append(f'<path d="M 32.35 105.25 A 51.5 51.5 0 0 0 85.93 105.69" fill="none" stroke="{TRACK_COLOR}" stroke-width="7.5" stroke-linecap="round" />')
+
+    # Progress Fill along smile from left to right
+    if p > 0.5:
+        sw = (p / 100.0) * 62.70
+        end_ang = 121.82 - sw
+        ex = CX + R * math.cos(end_ang * TO_RAD)
+        ey = CY + R * math.sin(end_ang * TO_RAD)
+        paths.append(f'<path d="M 32.35 105.25 A 51.5 51.5 0 0 0 {ex:.2f} {ey:.2f}" fill="none" stroke="{color}" stroke-width="7.5" stroke-linecap="round" />')
+
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+{chr(10).join(paths)}
+</svg>'''
+
+def generate_combined_duo_svg(p_top=50.0, p_bottom=50.0):
+    p_t = max(0.0, min(100.0, float(p_top)))
+    p_b = max(0.0, min(100.0, float(p_bottom)))
+    c_top = get_color(p_t)
+    c_bot = get_color(p_b)
+
+    paths = []
+    # Upper tracks
+    paths.append(f'<path d="M 15.50 88.25 A 51.5 51.5 0 0 1 29.52 19.61" fill="none" stroke="{TRACK_COLOR}" stroke-width="8" stroke-linecap="round" />')
+    paths.append(f'<path d="M 89.48 19.61 A 51.5 51.5 0 0 1 103.50 88.25" fill="none" stroke="{TRACK_COLOR}" stroke-width="8" stroke-linecap="round" />')
+
+    # Upper fill
+    if p_t > 0.5:
+        if p_t <= 50.0:
+            sw = (p_t / 50.0) * 85.71
+            end_ang = 148.69 + sw
+            ex = CX + R * math.cos(end_ang * TO_RAD)
+            ey = CY + R * math.sin(end_ang * TO_RAD)
+            paths.append(f'<path d="M 15.50 88.25 A 51.5 51.5 0 0 1 {ex:.2f} {ey:.2f}" fill="none" stroke="{c_top}" stroke-width="8" stroke-linecap="round" />')
+        else:
+            paths.append(f'<path d="M 15.50 88.25 A 51.5 51.5 0 0 1 29.52 19.61" fill="none" stroke="{c_top}" stroke-width="8" stroke-linecap="round" />')
+            sw = ((p_t - 50.0) / 50.0) * 85.71
+            end_ang = 305.60 + sw
+            ex = CX + R * math.cos(end_ang * TO_RAD)
+            ey = CY + R * math.sin(end_ang * TO_RAD)
+            paths.append(f'<path d="M 89.48 19.61 A 51.5 51.5 0 0 1 {ex:.2f} {ey:.2f}" fill="none" stroke="{c_top}" stroke-width="8" stroke-linecap="round" />')
+
+    # Lower smile track
+    paths.append(f'<path d="M 32.35 105.25 A 51.5 51.5 0 0 0 85.93 105.69" fill="none" stroke="{TRACK_COLOR}" stroke-width="7.5" stroke-linecap="round" />')
+
+    # Lower smile fill
+    if p_b > 0.5:
+        sw = (p_b / 100.0) * 62.70
+        end_ang = 121.82 - sw
+        ex = CX + R * math.cos(end_ang * TO_RAD)
+        ey = CY + R * math.sin(end_ang * TO_RAD)
+        paths.append(f'<path d="M 32.35 105.25 A 51.5 51.5 0 0 0 {ex:.2f} {ey:.2f}" fill="none" stroke="{c_bot}" stroke-width="7.5" stroke-linecap="round" />')
+
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+{chr(10).join(paths)}
 </svg>'''
 
 def pregenerate_all():
@@ -75,23 +133,37 @@ def pregenerate_all():
     ]
     for d in dirs:
         os.makedirs(d, exist_ok=True)
-        # Generate duo-0.svg to duo-100.svg
+        # Generate upper-0.svg to upper-100.svg
+        # Generate lower-0.svg to lower-100.svg
+        # Generate duo-0.svg to duo-100.svg (for backward compatibility)
         for p in range(101):
-            svg_content = generate_arc_svg_content(p)
-            path = os.path.join(d, f"duo-{p}.svg")
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(svg_content)
-        # Also default
-        default_svg = generate_arc_svg_content(50)
+            upper_content = generate_upper_svg(p)
+            with open(os.path.join(d, f"upper-{p}.svg"), "w", encoding="utf-8") as f:
+                f.write(upper_content)
+
+            lower_content = generate_lower_svg(p)
+            with open(os.path.join(d, f"lower-{p}.svg"), "w", encoding="utf-8") as f:
+                f.write(lower_content)
+
+            combined_content = generate_combined_duo_svg(p, p)
+            with open(os.path.join(d, f"duo-{p}.svg"), "w", encoding="utf-8") as f:
+                f.write(combined_content)
+
+        # Default fallback
         with open(os.path.join(d, "duo-default.svg"), "w", encoding="utf-8") as f:
-            f.write(default_svg)
-    print("Pre-generated duo-0.svg .. duo-100.svg (101 files) successfully.")
+            f.write(generate_combined_duo_svg(50, 50))
+
+    print("Pre-generated upper-0..100, lower-0..100, duo-0..100 SVGs successfully.")
 
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "--all":
         pregenerate_all()
+    elif len(sys.argv) >= 3:
+        p_top = float(sys.argv[1])
+        p_bot = float(sys.argv[2])
+        print(generate_combined_duo_svg(p_top, p_bot))
     elif len(sys.argv) >= 2:
         p = float(sys.argv[1])
-        print(generate_arc_svg_content(p))
+        print(generate_combined_duo_svg(p, p))
     else:
         pregenerate_all()

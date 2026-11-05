@@ -1,4 +1,4 @@
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { agents, theme, run, exec, appHome, props, closeOverlay, shared, setShared, layout } from "herdr";
 
@@ -1025,9 +1025,11 @@ export default class OpenUsage extends View {
     const topFontSize = displayTop.length >= 4 ? 7.5 : (displayTop.length >= 3 ? 8.5 : 9);
     const bottomFontSize = displayBottom.length >= 4 ? 7 : (displayBottom.length >= 3 ? 7.5 : 8);
 
-    // Pre-generated discrete SVG from duo-0.svg to duo-100.svg
-    const pInt = Math.max(0, Math.min(100, Math.round(topPercent)));
-    const gaugeSvgPath = `mods/openusage/cache/duo-${pInt}.svg`;
+    // Pre-generated discrete SVGs (Status-Trio Upper & Lower Smile Arcs)
+    const pTopInt = Math.max(0, Math.min(100, Math.round(topPercent)));
+    const pBotInt = Math.max(0, Math.min(100, Math.round(bottomPercent)));
+    const upperSvgPath = `mods/openusage/cache/upper-${pTopInt}.svg`;
+    const lowerSvgPath = `mods/openusage/cache/lower-${pBotInt}.svg`;
 
     const tip = [
       `${acc.name} (${acc.label || "Default"})`,
@@ -1039,8 +1041,8 @@ export default class OpenUsage extends View {
 
     return div()
       .id(`rail-acc-${acc.id}`)
-      .w(46)
-      .h(56)
+      .w(48)
+      .h(60)
       .relative()
       .flex()
       .items_center()
@@ -1050,31 +1052,41 @@ export default class OpenUsage extends View {
       .rounded(8)
       .tooltip(tip)
       .on_click(() => run("mod.open", { name: "openusage" }))
-      // 1. Single Continuous Arch Gauge SVG (7 o'clock -> 12 o'clock -> 5 o'clock)
+      // 1. Status-Trio Dual Gauge: Upper Wide Arc + Lower Smile Arc + Center Logo
       .child(
         div()
-          .absolute()
-          .inset_0()
-          .flex()
-          .items_center()
-          .justify_center()
-          .child(svg(gaugeSvgPath).size(36))
+          .relative()
+          .size(42)
+          // 1a. Upper Wide Arc Gauge (5h / 24h)
+          .child(
+            div()
+              .absolute()
+              .inset_0()
+              .child(image(upperSvgPath).size(42))
+          )
+          // 1b. Lower Smile Arc Gauge (7d)
+          .child(
+            div()
+              .absolute()
+              .inset_0()
+              .child(image(lowerSvgPath).size(42))
+          )
+          // 1c. Center Provider Logo (e.g. OpenAI white flower, Claude, Antigravity, OpenCode)
+          .child(
+            div()
+              .absolute()
+              .inset_0()
+              .flex()
+              .items_center()
+              .justify_center()
+              .child(svg(provMeta.icon).size(15).text_color(t.text))
+          )
       )
-      // 2. Center Provider Logo (e.g. OpenAI white flower, Claude, etc.)
+      // 2. Top Remaining % (5h / 24h) in upper top gap
       .child(
         div()
           .absolute()
-          .inset_0()
-          .flex()
-          .items_center()
-          .justify_center()
-          .child(svg(provMeta.icon).size(13))
-      )
-      // 3. Top Remaining % (5h / 24h) with matching color
-      .child(
-        div()
-          .absolute()
-          .top(1)
+          .top(0)
           .w_full()
           .flex()
           .justify_center()
@@ -1086,11 +1098,11 @@ export default class OpenUsage extends View {
               .child(displayTop)
           )
       )
-      // 4. Bottom Remaining % (7d) with matching color
+      // 3. Bottom Remaining % (7d) right below lower smile arc
       .child(
         div()
           .absolute()
-          .bottom(1)
+          .bottom(0)
           .w_full()
           .flex()
           .justify_center()
