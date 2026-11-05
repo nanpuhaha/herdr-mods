@@ -1,6 +1,6 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
-import { agents, theme, run, exec, appHome, props, closeOverlay } from "herdr";
+import { agents, theme, run, exec, appHome, props, closeOverlay, shared, setShared } from "herdr";
 
 const PROVIDER_METAS = {
   claude: {
@@ -47,6 +47,26 @@ const PERIODS = {
   monthly: 30 * 24 * 3600, // 30 days = 2,592,000s
   rolling: 24 * 3600,      // 24 hours = 86,400s
 };
+
+// 60-second cooldown: Opening/toggling the mod within 60s will NEVER trigger a refetch
+const MIN_REFRESH_INTERVAL = 60_000;
+const CACHE_KEY = "openusage.accounts_cache";
+
+function getSharedCache() {
+  try {
+    const c = shared(CACHE_KEY);
+    return (c && typeof c === "object") ? c : {};
+  } catch {
+    return {};
+  }
+}
+
+function updateSharedCache(accId, state) {
+  try {
+    const current = getSharedCache();
+    setShared(CACHE_KEY, { ...current, [accId]: state });
+  } catch {}
+}
 
 function clamp(value, min = 0, max = 100) {
   const n = Number.isFinite(value) ? value : 0;
@@ -191,13 +211,14 @@ export default class OpenUsage extends View {
   init(_props, cx) {
     this.viewMode = props()?.view === "settings" ? "settings" : "dashboard";
     this.accounts = [];
-    this.accountData = {};
-    this.containerWidth = 800;
 
-    // Load configured multi-accounts from accounts.py
+    // Warm cache from shared Herdr memory across all open instances (sidebar, tabs, overlays)
+    this.accountData = { ...getSharedCache() };
+
+    // Load multi-accounts configuration
     this.loadAccounts(cx);
 
-    // Refresh countdowns & relative timestamps every 30s
+    // Refresh countdowns & relative timestamps every 30s without hitting any network
     cx.timer.every(30_000, (cx) => cx.notify());
   }
 
@@ -211,7 +232,6 @@ export default class OpenUsage extends View {
           this.accounts = cfg.accounts ?? [];
         }
       } catch (err) {
-        // Fallback default accounts
         this.accounts = [
           { id: "claude-default", provider: "claude", name: "Claude Code", label: "Work", enabled: true },
           { id: "codex-default", provider: "codex", name: "OpenAI Codex", label: "Personal", enabled: true },
@@ -220,22 +240,42 @@ export default class OpenUsage extends View {
         ];
       }
 
-      // Initialize data state for each account and fetch
+      const cached = getSharedCache();
       for (const acc of this.accounts) {
-        if (!this.accountData[acc.id]) {
-          this.accountData[acc.id] = { data: null, at: 0, loading: false, error: null, warning: null };
+        if (!this.accountData[acc.id] && cached[acc.id]) {
+          this.accountData[acc.id] = cached[acc.id];
         }
         if (acc.enabled !== false) {
-          this.refreshAccount(acc, cx);
+          // Schedule background polling for this account
+          const provMeta = PROVIDER_METAS[acc.provider];
+          const pollMs = provMeta?.poll ?? 120_000;
+          cx.timer.every(pollMs, (cx) => this.refreshAccount(acc, cx, true));
+
+          // Only fetch on initial load if cache is missing or stale (> poll time)
+          const lastAt = this.accountData[acc.id]?.at || 0;
+          const age = Date.now() - lastAt;
+          if (!this.accountData[acc.id]?.data || age >= pollMs) {
+            this.refreshAccount(acc, cx, false);
+          }
         }
       }
       cx.notify();
     });
   }
 
-  refreshAccount(account, cx) {
+  refreshAccount(account, cx, force = false) {
     const provMeta = PROVIDER_METAS[account.provider];
     if (!provMeta) return;
+
+    const cached = getSharedCache()[account.id];
+    const age = cached?.at ? Date.now() - cached.at : Infinity;
+
+    // Cooldown check: If recently refreshed (< 60s) and not forced, DO NOT refetch on Open!
+    if (!force && cached?.data && age < MIN_REFRESH_INTERVAL) {
+      this.accountData[account.id] = cached;
+      cx.notify();
+      return;
+    }
 
     let provState = this.accountData[account.id];
     if (!provState) {
@@ -265,12 +305,18 @@ export default class OpenUsage extends View {
         if (!data.ok) {
           throw new Error(data.error || "Unsuccessful response");
         }
-        provState.data = data;
-        provState.at = data.fetched_at ? data.fetched_at * 1000 : Date.now();
-        provState.error = null;
-        provState.warning = data.warning ?? null;
+        const resultState = {
+          data,
+          at: data.fetched_at ? data.fetched_at * 1000 : Date.now(),
+          error: null,
+          warning: data.warning ?? null,
+          loading: false,
+        };
+        this.accountData[account.id] = resultState;
+        updateSharedCache(account.id, resultState);
       } catch (err) {
         provState.error = String(err?.message ?? err);
+        provState.loading = false;
       } finally {
         provState.loading = false;
         cx.notify();
@@ -279,9 +325,10 @@ export default class OpenUsage extends View {
   }
 
   refreshAll(cx) {
+    // Explicit click on Refresh forces immediate update
     for (const acc of this.accounts) {
       if (acc.enabled !== false) {
-        this.refreshAccount(acc, cx);
+        this.refreshAccount(acc, cx, true);
       }
     }
   }
@@ -406,7 +453,7 @@ export default class OpenUsage extends View {
   }
 
   /**
-   * Renders the Remaining Gauge with OpenUsage Pace Guide Line
+   * Renders the Remaining Gauge with OpenUsage Pace Guide Line (Full Dashboard view)
    */
   renderPacedMetricRow(t, label, windowData, periodSeconds) {
     if (!windowData) return null;
@@ -569,27 +616,27 @@ export default class OpenUsage extends View {
 
     const rows = [];
     if (account.provider === "claude") {
-      if (data?.five_hour) rows.push(this.renderPacedMetricRow(t, "5-Hour Session Limit", data.five_hour, PERIODS.session));
+      if (data?.five_hour) rows.push(this.renderPacedMetricRow(t, "5-Hour Session Limit (5시간)", data.five_hour, PERIODS.session));
       else rows.push(div().text_size(11).text_color(t.dim).child("5-Hour Session: full quota available (fresh)"));
-      if (data?.seven_day) rows.push(this.renderPacedMetricRow(t, "7-Day Weekly Limit", data.seven_day, PERIODS.weekly));
+      if (data?.seven_day) rows.push(this.renderPacedMetricRow(t, "7-Day Weekly Limit (주간)", data.seven_day, PERIODS.weekly));
     } else if (account.provider === "codex") {
-      if (data?.five_hour) rows.push(this.renderPacedMetricRow(t, "5-Hour Session Limit", data.five_hour, PERIODS.session));
-      if (data?.seven_day) rows.push(this.renderPacedMetricRow(t, "7-Day Weekly Limit", data.seven_day, PERIODS.weekly));
+      if (data?.five_hour) rows.push(this.renderPacedMetricRow(t, "5-Hour Session Limit (5시간)", data.five_hour, PERIODS.session));
+      if (data?.seven_day) rows.push(this.renderPacedMetricRow(t, "7-Day Weekly Limit (주간)", data.seven_day, PERIODS.weekly));
     } else if (account.provider === "antigravity") {
       const bucketTitle = data?.bucket ?? "Gemini Models";
-      if (data?.five_hour) rows.push(this.renderPacedMetricRow(t, `${bucketTitle} (5-Hour)`, data.five_hour, PERIODS.session));
-      if (data?.seven_day) rows.push(this.renderPacedMetricRow(t, `${bucketTitle} (Weekly)`, data.seven_day, PERIODS.weekly));
+      if (data?.five_hour) rows.push(this.renderPacedMetricRow(t, `${bucketTitle} (5시간)`, data.five_hour, PERIODS.session));
+      if (data?.seven_day) rows.push(this.renderPacedMetricRow(t, `${bucketTitle} (주간)`, data.seven_day, PERIODS.weekly));
       for (const b of data?.buckets ?? []) {
         if (b.five_hour || b.seven_day) {
           rows.push(div().pt(4).text_size(10.5).font_semibold().text_color(t.muted).child(b.name ?? "Other Models"));
-          if (b.five_hour) rows.push(this.renderPacedMetricRow(t, "5-Hour", b.five_hour, PERIODS.session));
-          if (b.seven_day) rows.push(this.renderPacedMetricRow(t, "Weekly", b.seven_day, PERIODS.weekly));
+          if (b.five_hour) rows.push(this.renderPacedMetricRow(t, "5-Hour (5시간)", b.five_hour, PERIODS.session));
+          if (b.seven_day) rows.push(this.renderPacedMetricRow(t, "Weekly (주간)", b.seven_day, PERIODS.weekly));
         }
       }
     } else if (account.provider === "opencode") {
-      if (data?.rolling) rows.push(this.renderPacedMetricRow(t, "Rolling Limit", data.rolling, PERIODS.rolling));
-      if (data?.weekly) rows.push(this.renderPacedMetricRow(t, "Weekly Limit", data.weekly, PERIODS.weekly));
-      if (data?.monthly) rows.push(this.renderPacedMetricRow(t, "Monthly Limit", data.monthly, PERIODS.monthly));
+      if (data?.rolling) rows.push(this.renderPacedMetricRow(t, "Rolling Limit (24시간)", data.rolling, PERIODS.rolling));
+      if (data?.weekly) rows.push(this.renderPacedMetricRow(t, "Weekly Limit (주간)", data.weekly, PERIODS.weekly));
+      if (data?.monthly) rows.push(this.renderPacedMetricRow(t, "Monthly Limit (월간)", data.monthly, PERIODS.monthly));
     }
 
     return v_flex()
@@ -659,7 +706,7 @@ export default class OpenUsage extends View {
                   .rounded(4)
                   .cursor_pointer()
                   .hover((s) => s.bg(t.hover))
-                  .on_click((_e, cx) => this.refreshAccount(account, cx))
+                  .on_click((_e, cx) => this.refreshAccount(account, cx, true))
                   .child(
                     state.loading
                       ? svg("mods/workspace-chrome/spinner.svg").size(14).spin(900)
@@ -704,7 +751,7 @@ export default class OpenUsage extends View {
             )
         )
       )
-      // Metric Gauges
+      // Metric Gauges (5-Hour AND Weekly simultaneously)
       .child(
         v_flex()
           .gap(10)
@@ -728,7 +775,7 @@ export default class OpenUsage extends View {
   }
 
   /**
-   * Compact Sidebar View (for Spaces/Agents sidebar placement)
+   * Compact Sidebar View (Displays 5시간 AND 주간 simultaneously for each account)
    */
   renderSidebar(cx, t) {
     const anyLoading = this.isAnyLoading();
@@ -738,7 +785,7 @@ export default class OpenUsage extends View {
       .size_full()
       .bg(t.chrome)
       .text_color(t.foreground)
-      .text_size(11.5)
+      .text_size(11)
       // Sidebar Header
       .child(
         h_flex()
@@ -775,7 +822,7 @@ export default class OpenUsage extends View {
               )
               .child(
                 div()
-                  .px(4)
+                  .px(5)
                   .py(2)
                   .rounded(3)
                   .cursor_pointer()
@@ -787,7 +834,7 @@ export default class OpenUsage extends View {
               )
           )
       )
-      // Compact Accounts List
+      // Compact Accounts List with 5시간 & 주간 simultaneous meters
       .child(
         v_flex()
           .flex_1()
@@ -802,22 +849,15 @@ export default class OpenUsage extends View {
       );
   }
 
-  renderSidebarAccountRow(t, acc, cx) {
-    const provMeta = PROVIDER_METAS[acc.provider] ?? PROVIDER_METAS.antigravity;
-    const state = this.accountData[acc.id] ?? { data: null };
-    const data = state.data;
-
-    // Pick primary window (five_hour or weekly or monthly)
-    let w = data?.five_hour || data?.rolling || data?.weekly || data?.monthly;
-    let period = PERIODS.session;
-    if (data?.rolling) period = PERIODS.rolling;
-    else if (data?.weekly) period = PERIODS.weekly;
-    else if (data?.monthly) period = PERIODS.monthly;
-
-    const used = clamp(w?.utilization ?? 0);
-    const pace = evaluatePace({ used, resetsAt: w?.resets_at, periodSeconds: period });
+  /**
+   * Compact mini gauge row for the sidebar (shows label, remaining bar, pace marker, % and reset note)
+   */
+  renderSidebarWindowGauge(t, label, windowData, periodSeconds) {
+    if (!windowData) return null;
+    const used = clamp(windowData.utilization ?? 0);
+    const pace = evaluatePace({ used, resetsAt: windowData.resets_at, periodSeconds });
     const rem = Math.round(pace.remainingPercent);
-    const resetNote = countdown(w?.resets_at);
+    const resetNote = countdown(windowData.resets_at);
 
     let dotColor = t.done;
     if (pace.status === "spent" || pace.status === "behind") dotColor = t.blocked;
@@ -827,40 +867,24 @@ export default class OpenUsage extends View {
       ? Math.round(clamp(pace.guideRemainingPercent, 1, 99))
       : null;
 
-    return v_flex()
-      .p(6)
-      .gap(4)
-      .rounded(5)
-      .bg(t.surface)
-      .border(1)
-      .border_color(t.border)
-      .cursor_pointer()
-      .hover((s) => s.bg(t.hover))
-      .on_click(() => run("mod.open", { name: "openusage" }))
+    return h_flex()
+      .gap(6)
+      .items_center()
+      .w_full()
+      // Window Label: "5시간" / "주간" / "월간"
       .child(
-        h_flex()
-          .items_center()
-          .justify_between()
-          .child(
-            h_flex()
-              .gap(5)
-              .items_center()
-              .child(svg(provMeta.icon).size(13))
-              .child(div().font_semibold().text_size(10.5).truncate().child(acc.label ? `${acc.name} (${acc.label})` : acc.name))
-          )
-          .child(
-            h_flex()
-              .gap(4)
-              .items_center()
-              .child(div().size(5).rounded(3).bg(dotColor))
-              .child(div().font_bold().text_size(10.5).text_color(dotColor).child(`${rem}%`))
-          )
+        div()
+          .w(28)
+          .flex_none()
+          .text_size(9)
+          .text_color(t.dim)
+          .child(label)
       )
-      // Gauge with Guide Tick
+      // Remaining Gauge Bar with Linear Pace Guide Line
       .child(
         div()
           .relative()
-          .w_full()
+          .flex_1()
           .h(4)
           .rounded(2)
           .bg(t.border)
@@ -884,18 +908,117 @@ export default class OpenUsage extends View {
                 .h_full()
                 .w(1.5)
                 .bg(t.foreground)
-                .opacity(0.8)
+                .opacity(0.85)
             )
           )
       )
+      // Percentage + Short Reset Countdown
+      .child(
+        h_flex()
+          .gap(4)
+          .items_center()
+          .flex_none()
+          .child(
+            div()
+              .w(26)
+              .text_right()
+              .font_bold()
+              .text_size(9.5)
+              .text_color(dotColor)
+              .child(`${rem}%`)
+          )
+          .when(Boolean(resetNote), (el) =>
+            el.child(
+              div()
+                .w(30)
+                .text_right()
+                .text_size(8.5)
+                .text_color(t.dim)
+                .truncate()
+                .child(resetNote)
+            )
+          )
+      );
+  }
+
+  renderSidebarAccountRow(t, acc, cx) {
+    const provMeta = PROVIDER_METAS[acc.provider] ?? PROVIDER_METAS.antigravity;
+    const state = this.accountData[acc.id] ?? { data: null };
+    const data = state.data;
+
+    // Gather 5시간 and 주간 windows to show SIMULTANEOUSLY
+    const windowRows = [];
+
+    if (acc.provider === "claude") {
+      if (data?.five_hour) windowRows.push(this.renderSidebarWindowGauge(t, "5시간", data.five_hour, PERIODS.session));
+      if (data?.seven_day) windowRows.push(this.renderSidebarWindowGauge(t, "주간", data.seven_day, PERIODS.weekly));
+    } else if (acc.provider === "codex") {
+      if (data?.five_hour) windowRows.push(this.renderSidebarWindowGauge(t, "5시간", data.five_hour, PERIODS.session));
+      if (data?.seven_day) windowRows.push(this.renderSidebarWindowGauge(t, "주간", data.seven_day, PERIODS.weekly));
+    } else if (acc.provider === "antigravity") {
+      if (data?.five_hour) windowRows.push(this.renderSidebarWindowGauge(t, "5시간", data.five_hour, PERIODS.session));
+      if (data?.seven_day) windowRows.push(this.renderSidebarWindowGauge(t, "주간", data.seven_day, PERIODS.weekly));
+    } else if (acc.provider === "opencode") {
+      if (data?.rolling) windowRows.push(this.renderSidebarWindowGauge(t, "24h", data.rolling, PERIODS.rolling));
+      if (data?.weekly) windowRows.push(this.renderSidebarWindowGauge(t, "주간", data.weekly, PERIODS.weekly));
+      if (data?.monthly) windowRows.push(this.renderSidebarWindowGauge(t, "월간", data.monthly, PERIODS.monthly));
+    }
+
+    // Determine overall account dot color (most critical status)
+    let overallDot = t.done;
+    if (data) {
+      const checkPace = (w, period) => {
+        if (!w) return;
+        const res = evaluatePace({ used: w.utilization ?? 0, resetsAt: w.resets_at, periodSeconds: period });
+        if (res.status === "spent" || res.status === "behind") overallDot = t.blocked;
+        else if (res.status === "onTrack" && overallDot !== t.blocked) overallDot = t.working;
+      };
+      if (data.five_hour) checkPace(data.five_hour, PERIODS.session);
+      if (data.seven_day) checkPace(data.seven_day, PERIODS.weekly);
+      if (data.rolling) checkPace(data.rolling, PERIODS.rolling);
+      if (data.monthly) checkPace(data.monthly, PERIODS.monthly);
+    }
+
+    return v_flex()
+      .p(7)
+      .gap(5)
+      .rounded(6)
+      .bg(t.surface)
+      .border(1)
+      .border_color(t.border)
+      .cursor_pointer()
+      .hover((s) => s.bg(t.hover))
+      .on_click(() => run("mod.open", { name: "openusage" }))
+      // Card Header: Icon + Name + Dot
       .child(
         h_flex()
           .items_center()
           .justify_between()
-          .text_size(9.5)
-          .text_color(t.dim)
-          .child(div().child(guidePct != null ? `Guide ~${guidePct}%` : "Quota"))
-          .child(div().child(resetNote ? `↻ ${resetNote}` : "active"))
+          .child(
+            h_flex()
+              .gap(5)
+              .items_center()
+              .child(svg(provMeta.icon).size(13))
+              .child(
+                div()
+                  .font_semibold()
+                  .text_size(10.5)
+                  .truncate()
+                  .child(acc.label ? `${acc.name} (${acc.label})` : acc.name)
+              )
+          )
+          .child(
+            h_flex()
+              .gap(4)
+              .items_center()
+              .child(div().size(5).rounded(3).bg(overallDot))
+          )
+      )
+      // Dual Gauges: 5시간 and 주간 simultaneously
+      .child(
+        v_flex()
+          .gap(3)
+          .children(windowRows.filter(Boolean))
       );
   }
 
@@ -1121,7 +1244,7 @@ export default class OpenUsage extends View {
                   )
               )
           )
-          // Section 3: Direct Config File & Layout Integration Guide
+          // Section 3: Performance & Cache Info
           .child(
             v_flex()
               .p(14)
@@ -1129,13 +1252,13 @@ export default class OpenUsage extends View {
               .bg(t.raised)
               .border(1)
               .border_color(t.border)
-              .gap(8)
-              .child(div().font_semibold().text_size(12).child("사이드바(Spaces/Agents) 배치 안내"))
+              .gap(6)
+              .child(div().font_semibold().text_size(12).child("캐싱 및 새로고침 방지 안내"))
               .child(
                 div()
                   .text_size(11)
                   .text_color(t.muted)
-                  .child("Herdr의 `layouts/main.json`의 `sidebar-lists` 블록에 `openusage`를 등록하면 왼쪽 사이드바에서 Spaces, Agents와 함께 컴팩트 게이지로 상시 모니터링할 수 있습니다.")
+                  .child("최근 60초 이내에 갱신된 데이터가 있으면 'Open'을 누르거나 창을 열 때마다 재호출되지 않고 즉시 캐시된 데이터를 표시합니다. 최신 데이터를 강제로 받아오려면 'Refresh' 버튼을 누르면 됩니다.")
               )
           )
       );
@@ -1145,12 +1268,10 @@ export default class OpenUsage extends View {
     const t = theme();
     const isSidebarRole = props()?.role === "sidebar";
 
-    // If rendered as sidebar block
     if (isSidebarRole) {
       return this.renderSidebar(cx, t);
     }
 
-    // If in Settings mode
     if (this.viewMode === "settings") {
       return this.renderSettings(cx, t);
     }
@@ -1177,6 +1298,7 @@ export default class OpenUsage extends View {
           .items_center()
           .justify_between()
           .child(
+            // Left: Logo & Title
             h_flex()
               .gap(10)
               .items_center()
@@ -1204,7 +1326,7 @@ export default class OpenUsage extends View {
                     div()
                       .text_size(11)
                       .text_color(t.dim)
-                      .child("Remaining quota vs linear pace across accounts & providers")
+                      .child("Remaining quota vs linear pace across accounts (5-Hour & Weekly simultaneous)")
                   )
               )
           )
@@ -1342,7 +1464,7 @@ export default class OpenUsage extends View {
               )
           )
       )
-      // Main Body: Configured Accounts Cards Grid
+      // Main Body: Configured Accounts Cards Grid (Showing 5-Hour and Weekly simultaneously)
       .child(
         v_flex()
           .flex_1()
