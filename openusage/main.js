@@ -1,4 +1,4 @@
-import { View, div, svg, image } from "gpui-kit";
+import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { agents, theme, run, exec, appHome, props, closeOverlay, shared, setShared, layout } from "herdr";
 
@@ -1026,8 +1026,8 @@ export default class OpenUsage extends View {
     const bottomFontSize = displayBottom.length >= 4 ? 7 : (displayBottom.length >= 3 ? 7.5 : 8);
 
     // Pre-generated discrete SVGs (Status-Trio Upper & Lower Smile Arcs)
-    const pTopInt = Math.max(0, Math.min(100, Math.round(topPercent)));
-    const pBotInt = Math.max(0, Math.min(100, Math.round(bottomPercent)));
+    const pTopInt = Number.isFinite(topPercent) ? Math.max(0, Math.min(100, Math.round(topPercent))) : 50;
+    const pBotInt = Number.isFinite(bottomPercent) ? Math.max(0, Math.min(100, Math.round(bottomPercent))) : 50;
     const upperSvgPath = `mods/openusage/cache/upper-${pTopInt}.svg`;
     const lowerSvgPath = `mods/openusage/cache/lower-${pBotInt}.svg`;
 
@@ -1062,14 +1062,14 @@ export default class OpenUsage extends View {
             div()
               .absolute()
               .inset_0()
-              .child(image(upperSvgPath).size(42))
+              .child(svg(upperSvgPath).size(42))
           )
           // 1b. Lower Smile Arc Gauge (7d)
           .child(
             div()
               .absolute()
               .inset_0()
-              .child(image(lowerSvgPath).size(42))
+              .child(svg(lowerSvgPath).size(42))
           )
           // 1c. Center Provider Logo (e.g. OpenAI white flower, Claude, Antigravity, OpenCode)
           .child(
