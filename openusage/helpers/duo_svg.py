@@ -153,7 +153,16 @@ def pregenerate_all():
         with open(os.path.join(d, "duo-default.svg"), "w", encoding="utf-8") as f:
             f.write(generate_combined_duo_svg(50, 50))
 
-    print("Pre-generated upper-0..100, lower-0..100, duo-0..100 SVGs successfully.")
+        # Also generate PNGs using macOS native sips
+        import subprocess, glob
+        from concurrent.futures import ThreadPoolExecutor
+        def to_png(f):
+            subprocess.run(["sips", "-s", "format", "png", f, "--out", f[:-4] + ".png"], capture_output=True)
+        svg_files = glob.glob(os.path.join(d, "*.svg"))
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            list(ex.map(to_png, svg_files))
+
+    print("Pre-generated upper-0..100, lower-0..100, duo-0..100 SVGs & PNGs successfully.")
 
 if __name__ == "__main__":
     if len(sys.argv) >= 2 and sys.argv[1] == "--all":

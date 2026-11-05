@@ -1,4 +1,4 @@
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { agents, theme, run, exec, appHome, props, closeOverlay, shared, setShared, layout } from "herdr";
 
@@ -234,7 +234,7 @@ export default class OpenUsage extends View {
     this.accounts = [];
 
     // Stamp load time into shared memory for diagnostics
-    try { setShared("openusage.build_v", "2026-11-05-v2-dual-meters"); } catch {}
+    try { setShared("openusage.build_v", "2026-11-05-v3-debug"); } catch {}
 
     // Warm cache from shared Herdr memory across all open instances (sidebar, tabs, overlays)
     this.accountData = { ...getSharedCache() };
@@ -587,14 +587,11 @@ export default class OpenUsage extends View {
           )
           .when(guidePct != null, (el) =>
             el.child(
-              div()
+              h_flex()
                 .absolute()
-                .left(`${guidePct}%`)
-                .top(0)
-                .h_full()
-                .w(2)
-                .bg(t.foreground)
-                .opacity(0.85)
+                .inset_0()
+                .child(div().w(`${guidePct}%`).h_full())
+                .child(div().w(2).h_full().bg(t.foreground).opacity(0.85))
             )
           )
       )
@@ -806,7 +803,8 @@ export default class OpenUsage extends View {
    * - Wide (>= 320px): Dual columns side-by-side (5시간 | 주간) on a single row!
    */
   renderSidebar(cx, t) {
-    const sbWidth = getSidebarWidth();
+    const sbWidth = this.sidebarWidth || getSidebarWidth();
+    try { setShared("openusage.current_sbWidth", { sidebarWidth: this.sidebarWidth, sbWidth }); } catch {}
     const isRail = sbWidth < 140;
     const isNarrow = sbWidth >= 140 && sbWidth < 230;
     const isWide = sbWidth >= 320;
@@ -825,6 +823,13 @@ export default class OpenUsage extends View {
         .items_center()
         .py(6)
         .gap(8)
+        .on_size_change((size, sizeCx) => {
+          const w = Math.round(size.width);
+          if (w > 0 && Math.abs(w - (this.sidebarWidth || 0)) >= 4) {
+            this.sidebarWidth = w;
+            sizeCx.notify();
+          }
+        })
         .child(
           div()
             .p(4)
@@ -858,6 +863,13 @@ export default class OpenUsage extends View {
       .border_color(t.border)
       .text_color(t.foreground)
       .text_size(11)
+      .on_size_change((size, sizeCx) => {
+        const w = Math.round(size.width);
+        if (w > 0 && Math.abs(w - (this.sidebarWidth || 0)) >= 4) {
+          this.sidebarWidth = w;
+          sizeCx.notify();
+        }
+      })
       // Responsive Sidebar Header
       .child(
         h_flex()
@@ -941,206 +953,210 @@ export default class OpenUsage extends View {
   renderSidebarRailAccount(t, acc, cx) {
     const provMeta = PROVIDER_METAS[acc.provider] ?? PROVIDER_METAS.antigravity;
     const state = this.accountData[acc.id] ?? { data: null };
-    const data = state.data;
+      const data = state.data;
 
-    const isOpenCode = acc.provider === "opencode";
+      const isOpenCode = acc.provider === "opencode";
 
-    let topPercent = null;
-    let bottomPercent = null;
-    let topStatus = "ahead";
-    let bottomStatus = "ahead";
-    const summaries = [];
+      let topPercent = null;
+      let bottomPercent = null;
+      let topStatus = "ahead";
+      let bottomStatus = "ahead";
+      const summaries = [];
 
-    if (data) {
-      if (isOpenCode) {
-        // OpenCode: Top is 24h (rolling), Bottom is 7d (weekly)
-        const w24 = data.rolling;
-        if (w24) {
-          const pace24 = evaluatePace({
-            used: w24.utilization ?? 0,
-            resetsAt: w24.resets_at,
-            periodSeconds: PERIODS.rolling,
-          });
-          topPercent = Math.round(pace24.remainingPercent);
-          topStatus = pace24.status;
-          summaries.push(`• 24h: 잔여 ${topPercent}% (${countdown(w24.resets_at) || "idle"})`);
+      if (data) {
+        if (isOpenCode) {
+          // OpenCode: Top is 24h (rolling), Bottom is 7d (weekly)
+          const w24 = data.rolling;
+          if (w24) {
+            const pace24 = evaluatePace({
+              used: w24.utilization ?? 0,
+              resetsAt: w24.resets_at,
+              periodSeconds: PERIODS.rolling,
+            });
+            topPercent = Math.round(pace24.remainingPercent);
+            topStatus = pace24.status;
+            summaries.push(`• 24h: 잔여 ${topPercent}% (${countdown(w24.resets_at) || "idle"})`);
+          }
+        } else {
+          // Claude, Codex, Antigravity: Top is 5h
+          const w5 = data.five_hour || (data.buckets?.[0]?.five_hour);
+          if (w5) {
+            const pace5 = evaluatePace({
+              used: w5.utilization ?? 0,
+              resetsAt: w5.resets_at,
+              periodSeconds: PERIODS.session,
+            });
+            topPercent = Math.round(pace5.remainingPercent);
+            topStatus = pace5.status;
+            summaries.push(`• 5시간: 잔여 ${topPercent}% (${countdown(w5.resets_at) || "idle"})`);
+          }
         }
-      } else {
-        // Claude, Codex, Antigravity: Top is 5h
-        const w5 = data.five_hour || (data.buckets?.[0]?.five_hour);
-        if (w5) {
-          const pace5 = evaluatePace({
-            used: w5.utilization ?? 0,
-            resetsAt: w5.resets_at,
-            periodSeconds: PERIODS.session,
+
+        // Bottom is always 7d (weekly)
+        const w7 = data.seven_day || data.weekly || (data.buckets?.[0]?.seven_day) || (data.buckets?.[0]?.weekly);
+        if (w7) {
+          const pace7 = evaluatePace({
+            used: w7.utilization ?? 0,
+            resetsAt: w7.resets_at,
+            periodSeconds: PERIODS.weekly,
           });
-          topPercent = Math.round(pace5.remainingPercent);
-          topStatus = pace5.status;
-          summaries.push(`• 5시간: 잔여 ${topPercent}% (${countdown(w5.resets_at) || "idle"})`);
+          bottomPercent = Math.round(pace7.remainingPercent);
+          bottomStatus = pace7.status;
+          summaries.push(`• 주간(7d): 잔여 ${bottomPercent}% (${countdown(w7.resets_at) || "idle"})`);
         }
       }
 
-      // Bottom is always 7d (weekly)
-      const w7 = data.seven_day || data.weekly || (data.buckets?.[0]?.seven_day) || (data.buckets?.[0]?.weekly);
-      if (w7) {
-        const pace7 = evaluatePace({
-          used: w7.utilization ?? 0,
-          resetsAt: w7.resets_at,
-          periodSeconds: PERIODS.weekly,
-        });
-        bottomPercent = Math.round(pace7.remainingPercent);
-        bottomStatus = pace7.status;
-        summaries.push(`• 주간(7d): 잔여 ${bottomPercent}% (${countdown(w7.resets_at) || "idle"})`);
+      // Fallbacks if data not yet loaded
+      if (topPercent === null) {
+        topPercent = 50;
+        topStatus = "idle";
       }
-    }
+      if (bottomPercent === null) {
+        bottomPercent = 50;
+        bottomStatus = "idle";
+      }
 
-    // Fallbacks if data not yet loaded
-    if (topPercent === null) {
-      topPercent = 50;
-      topStatus = "idle";
-    }
-    if (bottomPercent === null) {
-      bottomPercent = 50;
-      bottomStatus = "idle";
-    }
+      // If 7d / weekly is 0% remaining, 5h quota is unavailable / meaningless -> treat as 0% gray
+      const is7dExhausted = bottomPercent !== null && bottomPercent <= 0;
+      if (is7dExhausted) {
+        topPercent = 0;
+        topStatus = "spent";
+      }
 
-    // Top text & Gauge Color (5h / 24h)
-    const topColor = (topPercent <= 20 || topStatus === "spent")
-      ? "#ef4444"
-      : (topPercent <= 50 || topStatus === "behind")
-        ? "#f59e0b"
-        : "#10b981";
+      // Top text & Gauge Color (5h / 24h)
+      const topColor = is7dExhausted
+        ? (t.dim || "#71717a")
+        : (topPercent <= 20 || topStatus === "spent")
+          ? "#ef4444"
+          : (topPercent <= 50 || topStatus === "behind")
+            ? "#f59e0b"
+            : "#10b981";
 
-    // Bottom text Color (7d)
-    const bottomColor = (bottomPercent <= 20 || bottomStatus === "spent")
-      ? "#ef4444"
-      : (bottomPercent <= 50 || bottomStatus === "behind")
-        ? "#f59e0b"
-        : "#10b981";
+      // Bottom text Color (7d)
+      const bottomColor = (bottomPercent <= 20 || bottomStatus === "spent")
+        ? "#ef4444"
+        : (bottomPercent <= 50 || bottomStatus === "behind")
+          ? "#f59e0b"
+          : "#10b981";
 
-    const topLabel = isOpenCode ? "24h" : "5h";
-    const displayTop = `${topPercent}%`;
-    const displayBottom = `${bottomPercent}%`;
+      const topLabel = isOpenCode ? "24h" : "5h";
+      const displayTop = `${topPercent}%`;
+      const displayBottom = `${bottomPercent}%`;
 
-    const topFontSize = displayTop.length >= 4 ? 7.5 : (displayTop.length >= 3 ? 8.5 : 9);
-    const bottomFontSize = displayBottom.length >= 4 ? 7 : (displayBottom.length >= 3 ? 7.5 : 8);
+      const topFontSize = displayTop.length >= 4 ? 7.5 : (displayTop.length >= 3 ? 8.5 : 9);
+      const bottomFontSize = displayBottom.length >= 4 ? 7 : (displayBottom.length >= 3 ? 7.5 : 8);
 
-    // Pre-generated discrete SVGs (Status-Trio Upper & Lower Smile Arcs)
-    const pTopInt = Number.isFinite(topPercent) ? Math.max(0, Math.min(100, Math.round(topPercent))) : 50;
-    const pBotInt = Number.isFinite(bottomPercent) ? Math.max(0, Math.min(100, Math.round(bottomPercent))) : 50;
-    const upperSvgPath = `mods/openusage/cache/upper-${pTopInt}.svg`;
-    const lowerSvgPath = `mods/openusage/cache/lower-${pBotInt}.svg`;
+      // Pre-generated discrete PNGs (Status-Trio Upper & Lower Smile Arcs)
+      const pTopInt = Number.isFinite(topPercent) ? Math.max(0, Math.min(100, Math.round(topPercent))) : 50;
+      const pBotInt = Number.isFinite(bottomPercent) ? Math.max(0, Math.min(100, Math.round(bottomPercent))) : 50;
+      const upperPngPath = `mods/openusage/cache/upper-${pTopInt}.png`;
+      const lowerPngPath = `mods/openusage/cache/lower-${pBotInt}.png`;
 
-    const tip = [
-      `${acc.name} (${acc.label || "Default"})`,
-      `• ${topLabel} 잔여: ${displayTop}`,
-      `• 7d 잔여: ${displayBottom}`,
-      ...summaries.filter((s) => !s.includes(topLabel) && !s.includes("7d")),
-      "클릭하여 전체 사용량 열기",
-    ].join("\n");
+      const tip = [
+        `${acc.name} (${acc.label || "Default"})`,
+        `• ${topLabel} 잔여: ${displayTop}${is7dExhausted ? " (주간 소진으로 비활성)" : ""}`,
+        `• 7d 잔여: ${displayBottom}`,
+        ...summaries.filter((s) => !s.includes(topLabel) && !s.includes("7d")),
+        "클릭하여 전체 사용량 열기",
+      ].join("\n");
 
-    return div()
-      .id(`rail-acc-${acc.id}`)
-      .w(48)
-      .h(60)
-      .relative()
-      .flex()
-      .items_center()
-      .justify_center()
-      .cursor_pointer()
-      .hover((s) => s.bg(t.hover))
-      .rounded(8)
-      .tooltip(tip)
-      .on_click(() => run("mod.open", { name: "openusage" }))
-      // 1. Status-Trio Dual Gauge: Upper Wide Arc + Lower Smile Arc + Center Logo
-      .child(
-        div()
-          .relative()
-          .size(42)
-          // 1a. Upper Wide Arc Gauge (5h / 24h)
-          .child(
-            div()
-              .absolute()
-              .inset_0()
-              .child(svg(upperSvgPath).size(42))
-          )
-          // 1b. Lower Smile Arc Gauge (7d)
-          .child(
-            div()
-              .absolute()
-              .inset_0()
-              .child(svg(lowerSvgPath).size(42))
-          )
-          // 1c. Center Provider Logo (e.g. OpenAI white flower, Claude, Antigravity, OpenCode)
-          .child(
-            div()
-              .absolute()
-              .inset_0()
-              .flex()
-              .items_center()
-              .justify_center()
-              .child(svg(provMeta.icon).size(15).text_color(t.text))
-          )
-      )
-      // 2. Top Remaining % (5h / 24h) in upper top gap
-      .child(
-        div()
-          .absolute()
-          .top(0)
-          .w_full()
-          .flex()
-          .justify_center()
-          .child(
-            div()
-              .text_size(topFontSize)
-              .font_weight(700)
-              .text_color(topColor)
-              .child(displayTop)
-          )
-      )
-      // 3. Bottom Remaining % (7d) right below lower smile arc
-      .child(
-        div()
-          .absolute()
-          .bottom(0)
-          .w_full()
-          .flex()
-          .justify_center()
-          .child(
-            div()
-              .text_size(bottomFontSize)
-              .font_weight(700)
-              .text_color(bottomColor)
-              .child(displayBottom)
-          )
-      );
+      return div()
+        .id(`rail-acc-${acc.id}`)
+        .w(48)
+        .h(62)
+        .relative()
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .cursor_pointer()
+        .hover((s) => s.bg(t.hover))
+        .rounded(8)
+        .tooltip(tip)
+        .on_click(() => run("mod.open", { name: "openusage" }))
+        // 1. Status-Trio Dual Gauge: 44x44
+        .child(
+          div()
+            .relative()
+            .size(44)
+            // 1a. Upper Wide Arc Gauge (PNG)
+            .child(
+              div()
+                .absolute()
+                .inset_0()
+                .child(image(upperPngPath).w(44).h(44))
+            )
+            // 1b. Lower Smile Arc Gauge (PNG)
+            .child(
+              div()
+                .absolute()
+                .inset_0()
+                .child(image(lowerPngPath).w(44).h(44))
+            )
+            // 1c. Center Provider Logo (e.g. OpenAI white flower, Claude, Antigravity, OpenCode)
+            .child(
+              div()
+                .absolute()
+                .inset_0()
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(svg(provMeta.icon).size(15).text_color(t.foreground))
+            )
+            // 1d. Top Remaining % (5h / 24h) positioned in upper notch
+            .child(
+              div()
+                .absolute()
+                .top(0)
+                .w_full()
+                .flex()
+                .justify_center()
+                .child(
+                  div()
+                    .text_size(topFontSize)
+                    .font_bold()
+                    .text_color(topColor)
+                    .child(displayTop)
+                )
+            )
+        )
+        // 2. Bottom Remaining % (7d) right below lower smile arc
+        .child(
+          div()
+            .text_size(bottomFontSize)
+            .font_bold()
+            .text_color(bottomColor)
+            .child(displayBottom)
+        );
   }
 
   /**
    * Compact mini gauge row for the sidebar & small screens (shows label, remaining bar, pace marker, % and reset note)
    */
-  renderSidebarWindowGauge(t, label, windowData, periodSeconds, compact = false) {
+  renderSidebarWindowGauge(t, label, windowData, periodSeconds, compact = false, forceExhausted = false) {
     const isAvailable = Boolean(windowData);
-    const used = isAvailable ? clamp(windowData.utilization ?? 0) : 0;
+    const used = forceExhausted ? 100 : (isAvailable ? clamp(windowData.utilization ?? 0) : 0);
     const resetsAt = isAvailable ? windowData.resets_at : null;
     const pace = isAvailable ? evaluatePace({ used, resetsAt, periodSeconds }) : null;
-    const rem = pace ? Math.round(pace.remainingPercent) : null;
+    const rem = forceExhausted ? 0 : (pace ? Math.round(pace.remainingPercent) : null);
     const resetNote = countdown(resetsAt) || (isAvailable ? "idle" : "—");
 
     let dotColor = t.dim;
-    if (pace) {
+    if (forceExhausted) {
+      dotColor = t.dim;
+    } else if (pace) {
       if (pace.status === "spent" || pace.status === "behind") dotColor = t.blocked;
       else if (pace.status === "onTrack") dotColor = t.working;
       else if (pace.status === "ahead" || pace.status === "healthy") dotColor = t.done;
       else dotColor = rem <= 15 ? t.blocked : rem <= 35 ? t.working : t.done;
     }
 
-    const guidePct = pace?.guideRemainingPercent != null
+    const guidePct = !forceExhausted && pace?.guideRemainingPercent != null
       ? Math.round(clamp(pace.guideRemainingPercent, 1, 99))
       : null;
 
     // Minimum 4px indicator if 0% remaining so an exhausted meter never looks like an empty/missing bar
-    const barWidth = rem != null ? (rem <= 0 ? "4px" : `${rem}%`) : "0%";
+    const barWidth = rem != null ? (rem <= 0 ? (forceExhausted ? 0 : 4) : `${rem}%`) : 0;
 
     const labelW = compact ? 28 : 46;
     const remW = compact ? 26 : 28;
@@ -1185,14 +1201,11 @@ export default class OpenUsage extends View {
           )
           .when(guidePct != null, (el) =>
             el.child(
-              div()
+              h_flex()
                 .absolute()
-                .left(`${guidePct}%`)
-                .top(0)
-                .h_full()
-                .w(1.5)
-                .bg(t.foreground)
-                .opacity(0.85)
+                .inset_0()
+                .child(div().w(`${guidePct}%`).h_full())
+                .child(div().w(1.5).h_full().bg(t.foreground).opacity(0.85))
             )
           )
       )
@@ -1252,13 +1265,17 @@ export default class OpenUsage extends View {
       }
     }
 
+    const is7dExhausted = acc.provider === "opencode"
+      ? ((data?.weekly?.utilization ?? 0) >= 100)
+      : ((data?.seven_day?.utilization ?? 0) >= 100);
+
     // Helper to render dual meters side-by-side in 2 columns (Wide mode >= 320px)
-    const renderDualSideBySide = (label1, data1, period1, label2, data2, period2) => {
+    const renderDualSideBySide = (label1, data1, period1, label2, data2, period2, forceExhausted1 = false) => {
       return h_flex()
         .w_full()
         .gap(6)
         .items_center()
-        .child(this.renderSidebarWindowGauge(t, label1, data1, period1, true))
+        .child(this.renderSidebarWindowGauge(t, label1, data1, period1, true, forceExhausted1))
         .child(div().w(1).h(10).bg(t.border).opacity(0.8))
         .child(this.renderSidebarWindowGauge(t, label2, data2, period2, true));
     };
@@ -1268,22 +1285,23 @@ export default class OpenUsage extends View {
     if (isWide) {
       // In Wide mode (>= 320px), place 5시간 & 주간 SIDE-BY-SIDE in 2 columns!
       if (acc.provider === "claude") {
-        windowElements.push(renderDualSideBySide("5시간", data?.five_hour, PERIODS.session, "주간", data?.seven_day, PERIODS.weekly));
+        windowElements.push(renderDualSideBySide("5시간", data?.five_hour, PERIODS.session, "주간", data?.seven_day, PERIODS.weekly, is7dExhausted));
       } else if (acc.provider === "codex") {
-        windowElements.push(renderDualSideBySide("5시간", data?.five_hour, PERIODS.session, "주간", data?.seven_day, PERIODS.weekly));
+        windowElements.push(renderDualSideBySide("5시간", data?.five_hour, PERIODS.session, "주간", data?.seven_day, PERIODS.weekly, is7dExhausted));
       } else if (acc.provider === "antigravity") {
-        windowElements.push(renderDualSideBySide("Gem 5h", data?.five_hour, PERIODS.session, "Gem 주간", data?.seven_day, PERIODS.weekly));
+        windowElements.push(renderDualSideBySide("Gem 5h", data?.five_hour, PERIODS.session, "Gem 주간", data?.seven_day, PERIODS.weekly, is7dExhausted));
         const altBucket = data?.buckets?.find((b) => b.five_hour || b.seven_day);
         if (altBucket) {
-          windowElements.push(renderDualSideBySide("Cld 5h", altBucket.five_hour, PERIODS.session, "Cld 주간", altBucket.seven_day, PERIODS.weekly));
+          const alt7dExhausted = (altBucket.seven_day?.utilization ?? 0) >= 100;
+          windowElements.push(renderDualSideBySide("Cld 5h", altBucket.five_hour, PERIODS.session, "Cld 주간", altBucket.seven_day, PERIODS.weekly, alt7dExhausted));
         }
       } else if (acc.provider === "opencode") {
-        windowElements.push(renderDualSideBySide("24h", data?.rolling, PERIODS.rolling, "주간", data?.weekly, PERIODS.weekly));
+        windowElements.push(renderDualSideBySide("24h", data?.rolling, PERIODS.rolling, "주간", data?.weekly, PERIODS.weekly, is7dExhausted));
         if (data?.monthly) {
           windowElements.push(this.renderSidebarWindowGauge(t, "월간", data.monthly, PERIODS.monthly, false));
         }
       } else {
-        windowElements.push(renderDualSideBySide("5시간", data?.five_hour, PERIODS.session, "주간", data?.seven_day, PERIODS.weekly));
+        windowElements.push(renderDualSideBySide("5시간", data?.five_hour, PERIODS.session, "주간", data?.seven_day, PERIODS.weekly, is7dExhausted));
       }
     } else {
       // In Standard (< 320px) and Narrow (< 230px) modes: stacked 2-row layout
@@ -1297,25 +1315,26 @@ export default class OpenUsage extends View {
       const lMo = isNarrow ? "월" : "월간";
 
       if (acc.provider === "claude") {
-        windowElements.push(this.renderSidebarWindowGauge(t, l5h, data?.five_hour, PERIODS.session, isNarrow));
+        windowElements.push(this.renderSidebarWindowGauge(t, l5h, data?.five_hour, PERIODS.session, isNarrow, is7dExhausted));
         windowElements.push(this.renderSidebarWindowGauge(t, lWk, data?.seven_day, PERIODS.weekly, isNarrow));
       } else if (acc.provider === "codex") {
-        windowElements.push(this.renderSidebarWindowGauge(t, l5h, data?.five_hour, PERIODS.session, isNarrow));
+        windowElements.push(this.renderSidebarWindowGauge(t, l5h, data?.five_hour, PERIODS.session, isNarrow, is7dExhausted));
         windowElements.push(this.renderSidebarWindowGauge(t, lWk, data?.seven_day, PERIODS.weekly, isNarrow));
       } else if (acc.provider === "antigravity") {
-        windowElements.push(this.renderSidebarWindowGauge(t, lG5h, data?.five_hour, PERIODS.session, isNarrow));
+        windowElements.push(this.renderSidebarWindowGauge(t, lG5h, data?.five_hour, PERIODS.session, isNarrow, is7dExhausted));
         windowElements.push(this.renderSidebarWindowGauge(t, lGWk, data?.seven_day, PERIODS.weekly, isNarrow));
         const altBucket = data?.buckets?.find((b) => b.five_hour || b.seven_day);
         if (altBucket) {
-          if (altBucket.five_hour) windowElements.push(this.renderSidebarWindowGauge(t, lC5h, altBucket.five_hour, PERIODS.session, isNarrow));
+          const alt7dExhausted = (altBucket.seven_day?.utilization ?? 0) >= 100;
+          if (altBucket.five_hour) windowElements.push(this.renderSidebarWindowGauge(t, lC5h, altBucket.five_hour, PERIODS.session, isNarrow, alt7dExhausted));
           if (altBucket.seven_day) windowElements.push(this.renderSidebarWindowGauge(t, lCWk, altBucket.seven_day, PERIODS.weekly, isNarrow));
         }
       } else if (acc.provider === "opencode") {
-        windowElements.push(this.renderSidebarWindowGauge(t, l24h, data?.rolling, PERIODS.rolling, isNarrow));
+        windowElements.push(this.renderSidebarWindowGauge(t, l24h, data?.rolling, PERIODS.rolling, isNarrow, is7dExhausted));
         windowElements.push(this.renderSidebarWindowGauge(t, lWk, data?.weekly, PERIODS.weekly, isNarrow));
         if (data?.monthly) windowElements.push(this.renderSidebarWindowGauge(t, lMo, data.monthly, PERIODS.monthly, isNarrow));
       } else {
-        windowElements.push(this.renderSidebarWindowGauge(t, l5h, data?.five_hour, PERIODS.session, isNarrow));
+        windowElements.push(this.renderSidebarWindowGauge(t, l5h, data?.five_hour, PERIODS.session, isNarrow, is7dExhausted));
         windowElements.push(this.renderSidebarWindowGauge(t, lWk, data?.seven_day, PERIODS.weekly, isNarrow));
       }
     }
