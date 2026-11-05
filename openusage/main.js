@@ -6,7 +6,7 @@ const PROVIDER_METAS = {
   claude: {
     name: "Claude Code",
     script: "helpers/claude.py",
-    icon: "icons/claude.svg",
+    icon: "mods/openusage/icons/claude.svg",
     color: "#d97757",
     poll: 300_000,
     stale: 10 * 60_000,
@@ -15,7 +15,7 @@ const PROVIDER_METAS = {
   codex: {
     name: "OpenAI ChatGPT",
     script: "helpers/codex.py",
-    icon: "icons/codex.svg",
+    icon: "mods/openusage/icons/openai.svg",
     color: "#10a37f",
     poll: 120_000,
     stale: 10 * 60_000,
@@ -24,7 +24,7 @@ const PROVIDER_METAS = {
   antigravity: {
     name: "Google Antigravity",
     script: "helpers/antigravity.py",
-    icon: "icons/antigravity.svg",
+    icon: "mods/openusage/icons/antigravity.svg",
     color: "#4285f4",
     poll: 600_000,
     stale: 20 * 60_000,
@@ -33,7 +33,7 @@ const PROVIDER_METAS = {
   opencode: {
     name: "OpenCode",
     script: "helpers/opencode.py",
-    icon: "icons/opencode.svg",
+    icon: "mods/openusage/icons/opencode.svg",
     color: "#8b5cf6",
     poll: 120_000,
     stale: 10 * 60_000,
@@ -1452,7 +1452,7 @@ export default class OpenUsage extends View {
                           h_flex()
                             .gap(10)
                             .items_center()
-                            .child(svg(PROVIDER_METAS[acc.provider]?.icon ?? "icons/codex.svg").size(18))
+                            .child(svg(PROVIDER_METAS[acc.provider]?.icon ?? "mods/openusage/icons/openai.svg").size(18))
                             .child(
                               v_flex()
                                 .gap(2)

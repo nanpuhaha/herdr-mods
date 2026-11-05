@@ -412,6 +412,7 @@ openusage/
 └── icons/            # SVG 아이콘
     ├── openusage.svg
     ├── refresh.svg
+    ├── openai.svg    # LobeHub 공식 OpenAI ChatGPT 심볼 (@lobehub/icons Mono)
     ├── codex.svg     # LobeHub 공식 OpenAI ChatGPT 심볼
     ├── claude.svg
     ├── antigravity.svg
