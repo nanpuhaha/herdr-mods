@@ -246,15 +246,14 @@ export default class OpenUsage extends View {
           this.accountData[acc.id] = cached[acc.id];
         }
         if (acc.enabled !== false) {
-          // Schedule background polling for this account
+          // Schedule background polling for this account (runs periodically)
           const provMeta = PROVIDER_METAS[acc.provider];
           const pollMs = provMeta?.poll ?? 120_000;
           cx.timer.every(pollMs, (cx) => this.refreshAccount(acc, cx, true));
 
-          // Only fetch on initial load if cache is missing or stale (> poll time)
-          const lastAt = this.accountData[acc.id]?.at || 0;
-          const age = Date.now() - lastAt;
-          if (!this.accountData[acc.id]?.data || age >= pollMs) {
+          // NEVER auto-fetch on Open if data already exists in memory or shared cache!
+          // Only fetch if there is completely NO data at all (first cold start of app)
+          if (!this.accountData[acc.id]?.data && !cached[acc.id]?.data) {
             this.refreshAccount(acc, cx, false);
           }
         }
@@ -268,11 +267,11 @@ export default class OpenUsage extends View {
     if (!provMeta) return;
 
     const cached = getSharedCache()[account.id];
-    const age = cached?.at ? Date.now() - cached.at : Infinity;
 
-    // Cooldown check: If recently refreshed (< 60s) and not forced, DO NOT refetch on Open!
-    if (!force && cached?.data && age < MIN_REFRESH_INTERVAL) {
-      this.accountData[account.id] = cached;
+    // If not forced (e.g. user simply opened the mod), NEVER trigger a fetch if cache exists!
+    // Refetches ONLY happen on periodic background timer or when user clicks 'Refresh' (force=true)
+    if (!force && (cached?.data || this.accountData[account.id]?.data)) {
+      if (cached?.data) this.accountData[account.id] = cached;
       cx.notify();
       return;
     }
@@ -507,6 +506,8 @@ export default class OpenUsage extends View {
         h_flex()
           .items_center()
           .justify_between()
+          .flex_wrap()
+          .gap(4)
           .child(
             h_flex()
               .gap(6)
@@ -616,12 +617,11 @@ export default class OpenUsage extends View {
 
     const rows = [];
     if (account.provider === "claude") {
-      if (data?.five_hour) rows.push(this.renderPacedMetricRow(t, "5-Hour Session Limit (5시간)", data.five_hour, PERIODS.session));
-      else rows.push(div().text_size(11).text_color(t.dim).child("5-Hour Session: full quota available (fresh)"));
-      if (data?.seven_day) rows.push(this.renderPacedMetricRow(t, "7-Day Weekly Limit (주간)", data.seven_day, PERIODS.weekly));
+      rows.push(this.renderPacedMetricRow(t, "5-Hour Session (5시간)", data?.five_hour, PERIODS.session));
+      rows.push(this.renderPacedMetricRow(t, "7-Day Weekly (주간)", data?.seven_day, PERIODS.weekly));
     } else if (account.provider === "codex") {
-      if (data?.five_hour) rows.push(this.renderPacedMetricRow(t, "5-Hour Session Limit (5시간)", data.five_hour, PERIODS.session));
-      if (data?.seven_day) rows.push(this.renderPacedMetricRow(t, "7-Day Weekly Limit (주간)", data.seven_day, PERIODS.weekly));
+      rows.push(this.renderPacedMetricRow(t, "5-Hour Session (5시간)", data?.five_hour, PERIODS.session));
+      rows.push(this.renderPacedMetricRow(t, "7-Day Weekly (주간)", data?.seven_day, PERIODS.weekly));
     } else if (account.provider === "antigravity") {
       const bucketTitle = data?.bucket ?? "Gemini Models";
       if (data?.five_hour) rows.push(this.renderPacedMetricRow(t, `${bucketTitle} (5시간)`, data.five_hour, PERIODS.session));
@@ -642,7 +642,7 @@ export default class OpenUsage extends View {
     return v_flex()
       .id(`acc-${account.id}`)
       .flex_1()
-      .min_w(360)
+      .min_w(270)
       .bg(t.raised)
       .border(1)
       .border_color(t.border)
@@ -850,34 +850,40 @@ export default class OpenUsage extends View {
   }
 
   /**
-   * Compact mini gauge row for the sidebar (shows label, remaining bar, pace marker, % and reset note)
+   * Compact mini gauge row for the sidebar & small screens (shows label, remaining bar, pace marker, % and reset note)
    */
   renderSidebarWindowGauge(t, label, windowData, periodSeconds) {
-    if (!windowData) return null;
-    const used = clamp(windowData.utilization ?? 0);
-    const pace = evaluatePace({ used, resetsAt: windowData.resets_at, periodSeconds });
-    const rem = Math.round(pace.remainingPercent);
-    const resetNote = countdown(windowData.resets_at);
+    const isAvailable = Boolean(windowData);
+    const used = isAvailable ? clamp(windowData.utilization ?? 0) : 0;
+    const resetsAt = isAvailable ? windowData.resets_at : null;
+    const pace = isAvailable ? evaluatePace({ used, resetsAt, periodSeconds }) : null;
+    const rem = pace ? Math.round(pace.remainingPercent) : null;
+    const resetNote = countdown(resetsAt) || (isAvailable ? "idle" : "—");
 
-    let dotColor = t.done;
-    if (pace.status === "spent" || pace.status === "behind") dotColor = t.blocked;
-    else if (pace.status === "onTrack") dotColor = t.working;
+    let dotColor = t.dim;
+    if (pace) {
+      if (pace.status === "spent" || pace.status === "behind") dotColor = t.blocked;
+      else if (pace.status === "onTrack") dotColor = t.working;
+      else if (pace.status === "ahead" || pace.status === "healthy") dotColor = t.done;
+      else dotColor = rem <= 15 ? t.blocked : rem <= 35 ? t.working : t.done;
+    }
 
-    const guidePct = pace.guideRemainingPercent != null
+    const guidePct = pace?.guideRemainingPercent != null
       ? Math.round(clamp(pace.guideRemainingPercent, 1, 99))
       : null;
 
     return h_flex()
-      .gap(6)
+      .gap(5)
       .items_center()
       .w_full()
-      // Window Label: "5시간" / "주간" / "월간"
+      // Window Label: e.g. "5시간", "주간", "Gem 5h", etc.
       .child(
         div()
-          .w(28)
+          .w(52)
           .flex_none()
           .text_size(9)
           .text_color(t.dim)
+          .truncate()
           .child(label)
       )
       // Remaining Gauge Bar with Linear Pace Guide Line
@@ -889,15 +895,17 @@ export default class OpenUsage extends View {
           .rounded(2)
           .bg(t.border)
           .overflow_hidden()
-          .child(
-            div()
-              .absolute()
-              .left(0)
-              .top(0)
-              .h_full()
-              .w(`${rem}%`)
-              .rounded(2)
-              .bg(dotColor)
+          .when(rem != null, (el) =>
+            el.child(
+              div()
+                .absolute()
+                .left(0)
+                .top(0)
+                .h_full()
+                .w(`${rem}%`)
+                .rounded(2)
+                .bg(dotColor)
+            )
           )
           .when(guidePct != null, (el) =>
             el.child(
@@ -912,32 +920,27 @@ export default class OpenUsage extends View {
             )
           )
       )
-      // Percentage + Short Reset Countdown
+      // Percentage (Remaining %)
       .child(
-        h_flex()
-          .gap(4)
-          .items_center()
+        div()
+          .w(28)
           .flex_none()
-          .child(
-            div()
-              .w(26)
-              .text_right()
-              .font_bold()
-              .text_size(9.5)
-              .text_color(dotColor)
-              .child(`${rem}%`)
-          )
-          .when(Boolean(resetNote), (el) =>
-            el.child(
-              div()
-                .w(30)
-                .text_right()
-                .text_size(8.5)
-                .text_color(t.dim)
-                .truncate()
-                .child(resetNote)
-            )
-          )
+          .text_right()
+          .font_bold()
+          .text_size(9.5)
+          .text_color(dotColor)
+          .child(rem != null ? `${rem}%` : "--%")
+      )
+      // Reset Countdown (Always rendered with fixed width for rock-solid vertical alignment across all rows)
+      .child(
+        div()
+          .w(36)
+          .flex_none()
+          .text_right()
+          .text_size(8.5)
+          .text_color(t.dim)
+          .truncate()
+          .child(resetNote)
       );
   }
 
@@ -946,22 +949,30 @@ export default class OpenUsage extends View {
     const state = this.accountData[acc.id] ?? { data: null };
     const data = state.data;
 
-    // Gather 5시간 and 주간 windows to show SIMULTANEOUSLY
+    // Gather 5시간 and 주간 windows to show SIMULTANEOUSLY in small screen / sidebar
     const windowRows = [];
 
     if (acc.provider === "claude") {
-      if (data?.five_hour) windowRows.push(this.renderSidebarWindowGauge(t, "5시간", data.five_hour, PERIODS.session));
-      if (data?.seven_day) windowRows.push(this.renderSidebarWindowGauge(t, "주간", data.seven_day, PERIODS.weekly));
+      windowRows.push(this.renderSidebarWindowGauge(t, "5시간", data?.five_hour, PERIODS.session));
+      windowRows.push(this.renderSidebarWindowGauge(t, "주간", data?.seven_day, PERIODS.weekly));
     } else if (acc.provider === "codex") {
-      if (data?.five_hour) windowRows.push(this.renderSidebarWindowGauge(t, "5시간", data.five_hour, PERIODS.session));
-      if (data?.seven_day) windowRows.push(this.renderSidebarWindowGauge(t, "주간", data.seven_day, PERIODS.weekly));
+      windowRows.push(this.renderSidebarWindowGauge(t, "5시간", data?.five_hour, PERIODS.session));
+      windowRows.push(this.renderSidebarWindowGauge(t, "주간", data?.seven_day, PERIODS.weekly));
     } else if (acc.provider === "antigravity") {
-      if (data?.five_hour) windowRows.push(this.renderSidebarWindowGauge(t, "5시간", data.five_hour, PERIODS.session));
-      if (data?.seven_day) windowRows.push(this.renderSidebarWindowGauge(t, "주간", data.seven_day, PERIODS.weekly));
+      windowRows.push(this.renderSidebarWindowGauge(t, "Gem 5h", data?.five_hour, PERIODS.session));
+      windowRows.push(this.renderSidebarWindowGauge(t, "Gem 주간", data?.seven_day, PERIODS.weekly));
+      const altBucket = data?.buckets?.find((b) => b.five_hour || b.seven_day);
+      if (altBucket) {
+        if (altBucket.five_hour) windowRows.push(this.renderSidebarWindowGauge(t, "Cld 5h", altBucket.five_hour, PERIODS.session));
+        if (altBucket.seven_day) windowRows.push(this.renderSidebarWindowGauge(t, "Cld 주간", altBucket.seven_day, PERIODS.weekly));
+      }
     } else if (acc.provider === "opencode") {
-      if (data?.rolling) windowRows.push(this.renderSidebarWindowGauge(t, "24h", data.rolling, PERIODS.rolling));
-      if (data?.weekly) windowRows.push(this.renderSidebarWindowGauge(t, "주간", data.weekly, PERIODS.weekly));
+      windowRows.push(this.renderSidebarWindowGauge(t, "24h", data?.rolling, PERIODS.rolling));
+      windowRows.push(this.renderSidebarWindowGauge(t, "주간", data?.weekly, PERIODS.weekly));
       if (data?.monthly) windowRows.push(this.renderSidebarWindowGauge(t, "월간", data.monthly, PERIODS.monthly));
+    } else {
+      windowRows.push(this.renderSidebarWindowGauge(t, "5시간", data?.five_hour, PERIODS.session));
+      windowRows.push(this.renderSidebarWindowGauge(t, "주간", data?.seven_day, PERIODS.weekly));
     }
 
     // Determine overall account dot color (most critical status)
@@ -977,6 +988,10 @@ export default class OpenUsage extends View {
       if (data.seven_day) checkPace(data.seven_day, PERIODS.weekly);
       if (data.rolling) checkPace(data.rolling, PERIODS.rolling);
       if (data.monthly) checkPace(data.monthly, PERIODS.monthly);
+      for (const b of data.buckets ?? []) {
+        if (b.five_hour) checkPace(b.five_hour, PERIODS.session);
+        if (b.seven_day) checkPace(b.seven_day, PERIODS.weekly);
+      }
     }
 
     return v_flex()
@@ -1401,10 +1416,13 @@ export default class OpenUsage extends View {
           .border_color(t.border)
           .justify_between()
           .items_center()
+          .flex_wrap()
+          .gap(8)
           .child(
             h_flex()
               .gap(16)
               .items_center()
+              .flex_wrap()
               .child(
                 h_flex()
                   .gap(6)
