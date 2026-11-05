@@ -396,15 +396,12 @@ export async function test_example() {
 openusage/
 ├── mod.json          # 모드 설정 (다이얼로그 크기 및 타이틀 정의)
 ├── main.js           # GPUI 컴포넌트 뷰 (사이드바 4단계 반응형 / 대시보드 / 설정 화면)
-├── cache/            # 레일 뷰용 iPhone Duo 스타일 원형 게이지 SVG 캐시
-│   ├── duo-default.svg
-│   ├── duo-codex-default.svg
-│   ├── duo-claude-default.svg
-│   ├── duo-antigravity-default.svg
-│   └── duo-opencode-default.svg
+├── cache/            # 레일 뷰용 Status-Trio / iPhone Duo 원형 듀얼 아크 PNG 게이지 (0%~100%)
+│   ├── upper-0.png ~ upper-100.png   # 상단 5h/24h 배터리 아크 레이어
+│   └── lower-0.png ~ lower-100.png   # 하단 7d 주간 스마일 아크 레이어
 ├── helpers/          # 프로바이더별 CLI/API 데이터 수집기 및 위젯 생성기
 │   ├── accounts.py   # 다중 계정 설정(~/.config/herdr-app/openusage-accounts.json) CRUD
-│   ├── duo_svg.py    # iPhone Duo 스타일 원형 듀얼 아크 SVG 생성기
+│   ├── duo_svg.py    # iPhone Duo / Status-Trio 스타일 원형 듀얼 아크 SVG/PNG 생성기
 │   ├── antigravity.py
 │   ├── claude.py     # 커스텀 Keychain Service 명칭 지원
 │   ├── codex.py      # 커스텀 auth.json 경로 지원
@@ -438,4 +435,15 @@ openusage/
   ```bash
   herdr-app check ~/.config/herdr-app/mods/openusage
   ```
+
+### 14.4 버전 기록 및 검증 스크린샷 (v1.2.0)
+
+상세 변경 이력은 [CHANGELOG.md](file:///Users/jwseo/Project/herdr-mods/CHANGELOG.md)를 참고하십시오.
+
+| 뷰 모드 | 설명 | 스크린샷 |
+| :--- | :--- | :--- |
+| **표준 사이드바 모드 (Standard View, 268px)** | 계정별 5시간/주간 프로그레스 바, 잔여 %, 리셋 카운트다운, 7d 소진 시 5h 0% 회색 처리 및 공식 OpenAI 로고 | [openusage-standard-v1.2.0.png](file:///Users/jwseo/Project/herdr-mods/docs/screenshots/openusage-standard-v1.2.0.png) |
+| **초슬림 레일 모드 (Rail View, 68px)** | Status-Trio & iPhone Duo 스타일 원형 듀얼 아크 게이지 (상단 5h/24h 배터리 아크 + % 숫자, 하단 7d 스마일 아크 + % 숫자, 중앙 공식 로고) | [openusage-rail-v1.2.0.png](file:///Users/jwseo/Project/herdr-mods/docs/screenshots/openusage-rail-v1.2.0.png) |
+| **대시보드 모달 오버레이 (Dashboard Overlay)** | `mod.open '{"name":"openusage"}'` 전체 화면 대시보드, Pacing 가이드 및 카드별 상세 쿼터 분석 | [openusage-overlay-v1.2.0.png](file:///Users/jwseo/Project/herdr-mods/docs/screenshots/openusage-overlay-v1.2.0.png) |
+
 
