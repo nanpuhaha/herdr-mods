@@ -1084,7 +1084,7 @@ export default class OpenUsage extends View {
           .child(
             div()
               .text_size(numFontSize)
-              .font_weight("bold")
+              .font_weight(700)
               .text_color(t.foreground)
               .child(displayNum)
           )
