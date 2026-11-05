@@ -212,6 +212,9 @@ export default class OpenUsage extends View {
     this.viewMode = props()?.view === "settings" ? "settings" : "dashboard";
     this.accounts = [];
 
+    // Stamp load time into shared memory for diagnostics
+    try { setShared("openusage.build_v", "2026-11-05-v2-dual-meters"); } catch {}
+
     // Warm cache from shared Herdr memory across all open instances (sidebar, tabs, overlays)
     this.accountData = { ...getSharedCache() };
 
@@ -872,17 +875,21 @@ export default class OpenUsage extends View {
       ? Math.round(clamp(pace.guideRemainingPercent, 1, 99))
       : null;
 
+    // Minimum 4px indicator if 0% remaining so an exhausted meter never looks like an empty/missing bar
+    const barWidth = rem != null ? (rem <= 0 ? "4px" : `${rem}%`) : "0%";
+
     return h_flex()
-      .gap(5)
+      .gap(6)
       .items_center()
       .w_full()
       // Window Label: e.g. "5시간", "주간", "Gem 5h", etc.
       .child(
         div()
-          .w(52)
+          .w(48)
           .flex_none()
           .text_size(9)
-          .text_color(t.dim)
+          .font_medium()
+          .text_color(t.muted)
           .truncate()
           .child(label)
       )
@@ -891,8 +898,8 @@ export default class OpenUsage extends View {
         div()
           .relative()
           .flex_1()
-          .h(4)
-          .rounded(2)
+          .h(5)
+          .rounded(2.5)
           .bg(t.border)
           .overflow_hidden()
           .when(rem != null, (el) =>
@@ -902,8 +909,8 @@ export default class OpenUsage extends View {
                 .left(0)
                 .top(0)
                 .h_full()
-                .w(`${rem}%`)
-                .rounded(2)
+                .w(barWidth)
+                .rounded(2.5)
                 .bg(dotColor)
             )
           )
