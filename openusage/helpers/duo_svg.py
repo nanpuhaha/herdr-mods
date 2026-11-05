@@ -1,131 +1,97 @@
 #!/usr/bin/env python3
 """
-iPhone Duo Style Circular Gauge Generator for OpenUsage.
-Generates cached SVG widgets for sidebar rail view (< 140px).
+iPhone Duo Style Continuous Arch Gauge Generator for OpenUsage.
+Generates 0% ~ 100% cached SVG widgets for sidebar rail view (< 140px).
 
 Visual Design:
-- 0% ~ 50%: Fills Left Arc from bottom (115°) to top (245°)
-- 50% ~ 100%: Fills Right Arc from top (295°) to bottom (425° / 65°)
-- 100% -> 0%: Gradually decreases along the circular track like a real battery gauge!
+- Single continuous horseshoe/arch from 7 o'clock (125°) to 5 o'clock (415° / 55°)
+- 0%: Empty track
+- 16%: Fills from 7 o'clock to ~8:30 (Red)
+- 50%: Fills from 7 o'clock to 12 o'clock top (Amber)
+- 100%: Fills entire arch to 5 o'clock (Emerald)
 - Colors:
-  - <= 20% or spent: #ef4444 (Vibrant Red)
-  - <= 50% or behind: #f59e0b (Vibrant Amber/Yellow)
+  - <= 20%: #ef4444 (Vibrant Red)
+  - <= 50%: #f59e0b (Vibrant Amber/Yellow)
   - > 50%: #10b981 (Vibrant Emerald/Green)
+- 4 Bottom Pace Dots along the bottom 70° opening
 """
 import sys
 import os
 import math
 
-def generate_duo_svg_content(p_percent=50.0, pace="ahead", track_color="#3f3f46"):
-    cx, cy, r = 24, 25, 17
+def generate_arc_svg_content(p_percent=50.0):
+    cx, cy, r = 24, 24, 17
     to_rad = math.pi / 180.0
-
     p = max(0.0, min(100.0, float(p_percent)))
 
     # Color calculation matching gauge & text
-    if p <= 20.0 or pace == "spent":
+    if p <= 20.0:
         color = "#ef4444"
-    elif p <= 50.0 or pace == "behind":
+    elif p <= 50.0:
         color = "#f59e0b"
     else:
         color = "#10b981"
 
-    # Left Track & Progress: 115° to 245° (clockwise arc, span 130°)
-    x1_start, y1_start = 16.82, 40.41
-    x1_end_track, y1_end_track = 16.82, 9.59
-    left_prog = ""
+    track_color = "#3f3f46"
 
+    # Arch from 125° to 415° (span 290°)
+    x_start = cx + r * math.cos(125 * to_rad)
+    y_start = cy + r * math.sin(125 * to_rad)
+    x_end = cx + r * math.cos(415 * to_rad)
+    y_end = cy + r * math.sin(415 * to_rad)
+
+    track_path = f'<path d="M {x_start:.2f} {y_start:.2f} A 17 17 0 1 1 {x_end:.2f} {y_end:.2f}" fill="none" stroke="{track_color}" stroke-width="2.6" stroke-linecap="round" />'
+
+    prog_path = ""
     if p > 0.5:
-        ratio1 = min(1.0, p / 50.0)
-        ang1 = 115.0 + 130.0 * ratio1
-        rad1 = ang1 * to_rad
-        x1 = cx + r * math.cos(rad1)
-        y1 = cy + r * math.sin(rad1)
-        left_prog = f'<path d="M {x1_start} {y1_start} A 17 17 0 0 1 {x1:.2f} {y1:.2f}" fill="none" stroke="{color}" stroke-width="2.6" stroke-linecap="round" />'
+        span = 290.0 * (p / 100.0)
+        ang = 125.0 + span
+        x_prog = cx + r * math.cos(ang * to_rad)
+        y_prog = cy + r * math.sin(ang * to_rad)
+        large_arc = 1 if span > 180.0 else 0
+        prog_path = f'<path d="M {x_start:.2f} {y_start:.2f} A 17 17 0 {large_arc} 1 {x_prog:.2f} {y_prog:.2f}" fill="none" stroke="{color}" stroke-width="2.6" stroke-linecap="round" />'
 
-    # Right Track & Progress: 295° to 425° (clockwise arc, span 130°)
-    x2_start, y2_start = 31.18, 9.59
-    x2_end_track, y2_end_track = 31.18, 40.41
-    right_prog = ""
-
-    if p > 50.5:
-        ratio2 = min(1.0, (p - 50.0) / 50.0)
-        ang2 = 295.0 + 130.0 * ratio2
-        rad2 = ang2 * to_rad
-        x2 = cx + r * math.cos(rad2)
-        y2 = cy + r * math.sin(rad2)
-        right_prog = f'<path d="M {x2_start} {y2_start} A 17 17 0 0 1 {x2:.2f} {y2:.2f}" fill="none" stroke="{color}" stroke-width="2.6" stroke-linecap="round" />'
-
-    # 4 Bottom Pace Dots: 106°, 95°, 85°, 74°
-    dot_angles = [106, 95, 85, 74]
-    if p >= 75:
-        lit_count = 4
-    elif p >= 50:
-        lit_count = 3
-    elif p >= 25:
-        lit_count = 2
-    elif p > 0:
-        lit_count = 1
-    else:
-        lit_count = 0
-
-    if pace == "behind":
-        lit_count = min(lit_count, 2)
-    elif pace == "spent":
-        lit_count = min(lit_count, 1)
-
+    # 4 Bottom Pace Dots: angles 107°, 96°, 84°, 73°
+    dot_angles = [107, 96, 84, 73]
+    lit_count = 4 if p >= 75 else (3 if p >= 50 else (2 if p >= 25 else (1 if p > 0 else 0)))
     dots = []
     for i, ang in enumerate(dot_angles):
-        rad = ang * to_rad
-        dx = cx + r * math.cos(rad)
-        dy = cy + r * math.sin(rad)
+        dx = cx + r * math.cos(ang * to_rad)
+        dy = cy + r * math.sin(ang * to_rad)
         fill = color if i < lit_count else track_color
-        dots.append(f'  <circle cx="{dx:.2f}" cy="{dy:.2f}" r="1.35" fill="{fill}" />')
+        dots.append(f'  <circle cx="{dx:.2f}" cy="{dy:.2f}" r="1.2" fill="{fill}" />')
 
     return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48">
-  <!-- Left Track -->
-  <path d="M {x1_start} {y1_start} A 17 17 0 0 1 {x1_end_track} {y1_end_track}" fill="none" stroke="{track_color}" stroke-width="2.6" stroke-linecap="round" />
-  {left_prog}
-  <!-- Right Track -->
-  <path d="M {x2_start} {y2_start} A 17 17 0 0 1 {x2_end_track} {y2_end_track}" fill="none" stroke="{track_color}" stroke-width="2.6" stroke-linecap="round" />
-  {right_prog}
-  <!-- Pace Dots -->
+  {track_path}
+  {prog_path}
 {chr(10).join(dots)}
 </svg>'''
 
-def save_gauge_svg(acc_id, p_percent=50.0, pace="ahead"):
-    svg_content = generate_duo_svg_content(p_percent, pace)
+def pregenerate_all():
     home = os.path.expanduser("~")
     dirs = [
         os.path.join(home, ".config/herdr-app/mods/openusage/cache"),
         os.path.join(home, "Project/herdr-mods/openusage/cache"),
     ]
     for d in dirs:
-        try:
-            os.makedirs(d, exist_ok=True)
-            path = os.path.join(d, f"duo-{acc_id}.svg")
+        os.makedirs(d, exist_ok=True)
+        # Generate duo-0.svg to duo-100.svg
+        for p in range(101):
+            svg_content = generate_arc_svg_content(p)
+            path = os.path.join(d, f"duo-{p}.svg")
             with open(path, "w", encoding="utf-8") as f:
                 f.write(svg_content)
-        except Exception:
-            pass
+        # Also default
+        default_svg = generate_arc_svg_content(50)
+        with open(os.path.join(d, "duo-default.svg"), "w", encoding="utf-8") as f:
+            f.write(default_svg)
+    print("Pre-generated duo-0.svg .. duo-100.svg (101 files) successfully.")
 
 if __name__ == "__main__":
-    if len(sys.argv) >= 3:
-        acc_id = sys.argv[1]
-        p_percent = float(sys.argv[2])
-        pace = sys.argv[3] if len(sys.argv) >= 4 else "ahead"
-        save_gauge_svg(acc_id, p_percent, pace)
-        print(f"Generated duo-{acc_id}.svg (p={p_percent}%, pace={pace})")
-    elif len(sys.argv) >= 2 and sys.argv[1] == "--init-all":
-        presets = [
-            ("claude-default", 72.0, "onTrack"),
-            ("codex-default", 50.0, "ahead"),
-            ("antigravity-default", 90.0, "ahead"),
-            ("opencode-default", 16.0, "spent"),
-            ("default", 50.0, "onTrack"),
-        ]
-        for acc_id, p, pace in presets:
-            save_gauge_svg(acc_id, p, pace)
-        print("Pre-generated default Duo SVGs.")
+    if len(sys.argv) >= 2 and sys.argv[1] == "--all":
+        pregenerate_all()
+    elif len(sys.argv) >= 2:
+        p = float(sys.argv[1])
+        print(generate_arc_svg_content(p))
     else:
-        print("Usage: duo_svg.py <acc_id> <p_percent> [pace] OR duo_svg.py --init-all")
+        pregenerate_all()

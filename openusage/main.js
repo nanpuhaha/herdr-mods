@@ -931,132 +931,116 @@ export default class OpenUsage extends View {
   }
 
   /**
-   * Ensure iPhone Duo style circular gauge SVG is generated and cached for the account.
+   * Ultra-compact rail icon for sidebar width < 140px.
+   * Rendered in the style of "iPhone Duo" battery/network widget:
+   * - Top: 5h remaining % (OpenCode: 24h remaining %) with matching gauge color
+   * - Center: Official Provider Vector Logo (OpenAI ChatGPT, Claude, Antigravity, OpenCode)
+   * - Circular Arc: Decreases along the single continuous arch (7 o'clock -> 12 o'clock -> 5 o'clock)
+   * - Bottom: 7d remaining % with matching weekly color
    */
-  ensureDuoGaugeSvg(acc) {
+  renderSidebarRailAccount(t, acc, cx) {
+    const provMeta = PROVIDER_METAS[acc.provider] ?? PROVIDER_METAS.antigravity;
     const state = this.accountData[acc.id] ?? { data: null };
     const data = state.data;
 
-    let remPercent = null;
-    let rem5 = null;
-    let rem7 = null;
-    let paceStatus = "ahead";
+    const isOpenCode = acc.provider === "opencode";
+
+    let topPercent = null;
+    let bottomPercent = null;
+    let topStatus = "ahead";
+    let bottomStatus = "ahead";
+    const summaries = [];
 
     if (data) {
-      const w5 = data.five_hour || (data.buckets?.[0]?.five_hour);
-      const w7 = data.seven_day || (data.buckets?.[0]?.seven_day);
-
-      if (w5) {
-        const pace5 = evaluatePace({
-          used: w5.utilization ?? 0,
-          resetsAt: w5.resets_at,
-          periodSeconds: PERIODS.session,
-        });
-        rem5 = Math.round(pace5.remainingPercent);
-        paceStatus = pace5.status;
-        remPercent = rem5;
+      if (isOpenCode) {
+        // OpenCode: Top is 24h (rolling), Bottom is 7d (weekly)
+        const w24 = data.rolling;
+        if (w24) {
+          const pace24 = evaluatePace({
+            used: w24.utilization ?? 0,
+            resetsAt: w24.resets_at,
+            periodSeconds: PERIODS.rolling,
+          });
+          topPercent = Math.round(pace24.remainingPercent);
+          topStatus = pace24.status;
+          summaries.push(`• 24h: 잔여 ${topPercent}% (${countdown(w24.resets_at) || "idle"})`);
+        }
+      } else {
+        // Claude, Codex, Antigravity: Top is 5h
+        const w5 = data.five_hour || (data.buckets?.[0]?.five_hour);
+        if (w5) {
+          const pace5 = evaluatePace({
+            used: w5.utilization ?? 0,
+            resetsAt: w5.resets_at,
+            periodSeconds: PERIODS.session,
+          });
+          topPercent = Math.round(pace5.remainingPercent);
+          topStatus = pace5.status;
+          summaries.push(`• 5시간: 잔여 ${topPercent}% (${countdown(w5.resets_at) || "idle"})`);
+        }
       }
 
+      // Bottom is always 7d (weekly)
+      const w7 = data.seven_day || data.weekly || (data.buckets?.[0]?.seven_day) || (data.buckets?.[0]?.weekly);
       if (w7) {
         const pace7 = evaluatePace({
           used: w7.utilization ?? 0,
           resetsAt: w7.resets_at,
           periodSeconds: PERIODS.weekly,
         });
-        rem7 = Math.round(pace7.remainingPercent);
-        if (remPercent === null) {
-          remPercent = rem7;
-          paceStatus = pace7.status;
-        }
+        bottomPercent = Math.round(pace7.remainingPercent);
+        bottomStatus = pace7.status;
+        summaries.push(`• 주간(7d): 잔여 ${bottomPercent}% (${countdown(w7.resets_at) || "idle"})`);
       }
     }
 
-    if (remPercent === null) {
-      remPercent = 50;
-      paceStatus = "idle";
+    // Fallbacks if data not yet loaded
+    if (topPercent === null) {
+      topPercent = 50;
+      topStatus = "idle";
+    }
+    if (bottomPercent === null) {
+      bottomPercent = 50;
+      bottomStatus = "idle";
     }
 
-    // Dynamic gauge & text color
-    const gaugeColor = (remPercent <= 20 || paceStatus === "spent")
+    // Top text & Gauge Color (5h / 24h)
+    const topColor = (topPercent <= 20 || topStatus === "spent")
       ? "#ef4444"
-      : (remPercent <= 50 || paceStatus === "behind")
+      : (topPercent <= 50 || topStatus === "behind")
         ? "#f59e0b"
         : "#10b981";
 
-    const gaugeKey = `${acc.id}:${remPercent}:${paceStatus}`;
-    const relPath = `mods/openusage/cache/duo-${acc.id}.svg`;
+    // Bottom text Color (7d)
+    const bottomColor = (bottomPercent <= 20 || bottomStatus === "spent")
+      ? "#ef4444"
+      : (bottomPercent <= 50 || bottomStatus === "behind")
+        ? "#f59e0b"
+        : "#10b981";
 
-    if (state.lastGaugeKey !== gaugeKey) {
-      state.lastGaugeKey = gaugeKey;
-      try {
-        const scriptPath = `${appHome()}/mods/openusage/helpers/duo_svg.py`;
-        exec("python3", [
-          scriptPath,
-          acc.id,
-          String(remPercent),
-          paceStatus,
-        ]);
-      } catch (_err) {
-        // Ignore exec errors
-      }
-    }
+    const topLabel = isOpenCode ? "24h" : "5h";
+    const displayTop = `${topPercent}%`;
+    const displayBottom = `${bottomPercent}%`;
 
-    return { relPath, remPercent, rem5, rem7, paceStatus, gaugeColor };
-  }
+    const topFontSize = displayTop.length >= 4 ? 7.5 : (displayTop.length >= 3 ? 8.5 : 9);
+    const bottomFontSize = displayBottom.length >= 4 ? 7 : (displayBottom.length >= 3 ? 7.5 : 8);
 
-  /**
-   * Ultra-compact rail icon for sidebar width < 140px.
-   * Rendered in the style of "iPhone Duo" battery/network widget:
-   * - Top: Remaining percentage number + "%" (colored identically to the gauge bar)
-   * - Center: Provider logo SVG (OpenAI ChatGPT, Claude, Antigravity, OpenCode)
-   * - Circular Arc: Decreases along the circular track like a true battery gauge (0% ~ 100%)
-   * - Bottom: 4 pace indicator dots
-   */
-  renderSidebarRailAccount(t, acc, cx) {
-    const provMeta = PROVIDER_METAS[acc.provider] ?? PROVIDER_METAS.antigravity;
-    const { relPath, remPercent, rem5, rem7, paceStatus, gaugeColor } = this.ensureDuoGaugeSvg(acc);
-
-    const displayPercent = remPercent !== null ? `${remPercent}%` : "—";
-    const numFontSize = displayPercent.length >= 4 ? 7.5 : (displayPercent.length >= 3 ? 8.5 : 9);
-
-    const state = this.accountData[acc.id] ?? { data: null };
-    const data = state.data;
-    const summaries = [];
-    if (data) {
-      const checkPace = (w, period, name) => {
-        if (!w) return;
-        const res = evaluatePace({ used: w.utilization ?? 0, resetsAt: w.resets_at, periodSeconds: period });
-        summaries.push(`• ${name}: 잔여 ${Math.round(res.remainingPercent)}% (${countdown(w.resets_at) || "idle"})`);
-      };
-      if (data.five_hour) checkPace(data.five_hour, PERIODS.session, "5시간");
-      if (data.seven_day) checkPace(data.seven_day, PERIODS.weekly, "주간");
-      if (data.rolling) checkPace(data.rolling, PERIODS.rolling, "24h");
-      if (data.monthly) checkPace(data.monthly, PERIODS.monthly, "월간");
-      for (const b of data.buckets ?? []) {
-        if (b.five_hour) checkPace(b.five_hour, PERIODS.session, `${b.name || "Cld"} 5h`);
-        if (b.seven_day) checkPace(b.seven_day, PERIODS.weekly, `${b.name || "Cld"} 주간`);
-      }
-    }
-
-    const paceKo = {
-      ahead: "여유 (Ahead)",
-      onTrack: "정상 (On Track)",
-      behind: "빠름 (Behind)",
-      spent: "소진 (Spent)",
-      idle: "대기 (Idle)",
-    }[paceStatus] ?? "정상";
+    // Pre-generated discrete SVG from duo-0.svg to duo-100.svg
+    const pInt = Math.max(0, Math.min(100, Math.round(topPercent)));
+    const gaugeSvgPath = `mods/openusage/cache/duo-${pInt}.svg`;
 
     const tip = [
       `${acc.name} (${acc.label || "Default"})`,
-      `현재 잔여량: ${displayPercent}`,
-      ...summaries,
-      `페이스: ${paceKo}`,
+      `• ${topLabel} 잔여: ${displayTop}`,
+      `• 7d 잔여: ${displayBottom}`,
+      ...summaries.filter((s) => !s.includes(topLabel) && !s.includes("7d")),
       "클릭하여 전체 사용량 열기",
     ].join("\n");
 
     return div()
       .id(`rail-acc-${acc.id}`)
-      .size(46)
+      .w(46)
+      .h(56)
       .relative()
       .flex()
       .items_center()
@@ -1066,7 +1050,7 @@ export default class OpenUsage extends View {
       .rounded(8)
       .tooltip(tip)
       .on_click(() => run("mod.open", { name: "openusage" }))
-      // 1. iPhone Duo Style Circular Dual-Arc & Dots SVG (Gauge bar that decreases 100% -> 0%)
+      // 1. Single Continuous Arch Gauge SVG (7 o'clock -> 12 o'clock -> 5 o'clock)
       .child(
         div()
           .absolute()
@@ -1074,34 +1058,49 @@ export default class OpenUsage extends View {
           .flex()
           .items_center()
           .justify_center()
-          .child(svg(relPath).size(38))
+          .child(svg(gaugeSvgPath).size(36))
       )
-      // 2. Top Remaining Percentage with % (Color matched identically with gauge bar)
+      // 2. Center Provider Logo (e.g. OpenAI white flower, Claude, etc.)
       .child(
         div()
           .absolute()
-          .top(2)
+          .inset_0()
+          .flex()
+          .items_center()
+          .justify_center()
+          .child(svg(provMeta.icon).size(13))
+      )
+      // 3. Top Remaining % (5h / 24h) with matching color
+      .child(
+        div()
+          .absolute()
+          .top(1)
           .w_full()
           .flex()
           .justify_center()
           .child(
             div()
-              .text_size(numFontSize)
+              .text_size(topFontSize)
               .font_weight(700)
-              .text_color(gaugeColor)
-              .child(displayPercent)
+              .text_color(topColor)
+              .child(displayTop)
           )
       )
-      // 3. Center Provider Logo
+      // 4. Bottom Remaining % (7d) with matching color
       .child(
         div()
           .absolute()
-          .inset_0()
+          .bottom(1)
+          .w_full()
           .flex()
-          .items_center()
           .justify_center()
-          .mt(1)
-          .child(svg(provMeta.icon).size(13))
+          .child(
+            div()
+              .text_size(bottomFontSize)
+              .font_weight(700)
+              .text_color(bottomColor)
+              .child(displayBottom)
+          )
       );
   }
 
