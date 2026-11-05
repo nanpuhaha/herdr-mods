@@ -17,27 +17,32 @@ import time
 import urllib.error
 import urllib.request
 
-KEYCHAIN_SERVICE = "Claude Code-credentials"
+DEFAULT_KEYCHAIN_SERVICE = "Claude Code-credentials"
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
-CACHE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache-claude.json")
 CACHE_MAX_AGE = 7 * 24 * 3600
 WINDOWS = ("five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet")
 
 
-def access_token():
+def get_cache_path(service_name):
+    clean = "".join(c if c.isalnum() else "_" for c in service_name)
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), f".cache-claude-{clean}.json")
+
+
+def access_token(service_name=DEFAULT_KEYCHAIN_SERVICE):
     """Return Claude Code's OAuth token without exposing it to the caller."""
     result = subprocess.run(
-        ["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-w"],
+        ["security", "find-generic-password", "-s", service_name, "-w"],
         capture_output=True,
         text=True,
         timeout=10,
     )
     if result.returncode != 0:
-        raise RuntimeError("Claude credentials not found in Keychain")
+        raise RuntimeError(f"Claude credentials not found in Keychain ({service_name})")
     credentials = json.loads(result.stdout)
     token = credentials.get("claudeAiOauth", {}).get("accessToken")
     if not token:
-        raise RuntimeError("Claude Keychain item has no access token")
+        raise RuntimeError(f"Claude Keychain item ({service_name}) has no access token")
+    return token
     return token
 
 
@@ -69,10 +74,11 @@ def summarize(body):
     return windows
 
 
-def read_cache():
+def read_cache(service_name):
     """Return the last successful summary, if it is recent enough."""
     try:
-        with open(CACHE_PATH, encoding="utf-8") as handle:
+        path = get_cache_path(service_name)
+        with open(path, encoding="utf-8") as handle:
             cached = json.load(handle)
         if time.time() - float(cached.get("fetched_at", 0)) <= CACHE_MAX_AGE:
             return cached
@@ -81,40 +87,42 @@ def read_cache():
     return None
 
 
-def write_cache(summary, fetched_at):
+def write_cache(summary, fetched_at, service_name):
     """Persist the last successful summary without making the meter fail."""
     try:
-        with open(CACHE_PATH, "w", encoding="utf-8") as handle:
+        path = get_cache_path(service_name)
+        with open(path, "w", encoding="utf-8") as handle:
             json.dump({"fetched_at": fetched_at, **summary}, handle)
     except Exception:
         pass
 
 
-def cached_result(warning):
+def cached_result(warning, service_name):
     """Show the last known numbers, labelled with the warning that caused them."""
-    cached = read_cache()
+    cached = read_cache(service_name)
     if not cached:
         return None
     return {"ok": True, "cached": True, "warning": warning, **cached}
 
 
 def main():
+    service_name = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] else DEFAULT_KEYCHAIN_SERVICE
     try:
-        summary = summarize(fetch_usage(access_token()))
+        summary = summarize(fetch_usage(access_token(service_name)))
         fetched_at = time.time()
-        write_cache(summary, fetched_at)
+        write_cache(summary, fetched_at, service_name)
         print(json.dumps({"ok": True, "fetched_at": fetched_at, **summary}))
     except urllib.error.HTTPError as error:
         retry_after = error.headers.get("Retry-After")
         warning = f"usage request failed ({error.code})"
-        cached = cached_result(warning)
+        cached = cached_result(warning, service_name)
         if cached:
             print(json.dumps({**cached, "retry_after": retry_after}))
         else:
             print(json.dumps({"ok": False, "error": warning, "retry_after": retry_after}))
     except Exception as error:  # noqa: BLE001 - the mod shows any failure as offline
         warning = str(error)[:200]
-        cached = cached_result(warning)
+        cached = cached_result(warning, service_name)
         print(json.dumps(cached if cached else {"ok": False, "error": warning}))
     return 0
 

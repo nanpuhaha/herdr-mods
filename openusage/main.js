@@ -2,7 +2,7 @@ import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { agents, theme, run, exec, appHome, props, closeOverlay } from "herdr";
 
-const PROVIDERS = {
+const PROVIDER_METAS = {
   claude: {
     name: "Claude Code",
     script: "helpers/claude.py",
@@ -41,7 +41,6 @@ const PROVIDERS = {
   },
 };
 
-// Known window durations in seconds
 const PERIODS = {
   session: 5 * 3600,       // 5 hours = 18,000s
   weekly: 7 * 24 * 3600,   // 7 days = 604,800s
@@ -80,10 +79,6 @@ function timeAgo(stamp) {
   return `${Math.floor(hr / 24)}d ago`;
 }
 
-/**
- * OpenUsage (robinebers/openusage) Pace Algorithm implementation.
- * Evaluates constant-rate burn guidance and projected status at window reset.
- */
 function evaluatePace({ used, limit = 100, resetsAt, periodSeconds, now = Date.now() }) {
   const actualRemaining = Math.max(0, limit - used);
   const remainingPercent = Math.min(100, Math.max(0, (actualRemaining / limit) * 100));
@@ -131,7 +126,6 @@ function evaluatePace({ used, limit = 100, resetsAt, periodSeconds, now = Date.n
   }
 
   const elapsedFraction = Math.min(1, Math.max(0, elapsedMs / periodMs));
-  // Expected remaining percentage if spent at a completely linear rate
   const guideRemainingPercent = Math.max(0, Math.min(100, (1 - elapsedFraction) * 100));
 
   if (used >= limit) {
@@ -158,7 +152,6 @@ function evaluatePace({ used, limit = 100, resetsAt, periodSeconds, now = Date.n
     };
   }
 
-  // OpenUsage projection: projected = used / elapsed * periodDuration
   const projectedUsed = (used / elapsedMs) * periodMs;
   const projectedFraction = projectedUsed / limit;
   const projectedUsagePercent = Math.round(projectedFraction * 100);
@@ -168,18 +161,15 @@ function evaluatePace({ used, limit = 100, resetsAt, periodSeconds, now = Date.n
   let isAhead = true;
 
   if (projectedUsed > limit) {
-    // Behind pace: Burning faster than linear guide (조기 소진 위험)
     status = "behind";
     isAhead = false;
     const overPercent = Math.max(1, Math.round((projectedFraction - 1) * 100));
     statusText = `~${overPercent}% over limit at reset`;
   } else if (projectedUsed > limit * 0.9) {
-    // On track: Close to limit at reset (90-100% projected)
     status = "onTrack";
     isAhead = false;
     statusText = `~${projectedUsagePercent}% used at reset`;
   } else {
-    // Ahead: Burning slower than linear guide, comfortable remaining quota
     status = "ahead";
     isAhead = true;
     const leftPercent = Math.max(1, Math.round((1 - projectedFraction) * 100));
@@ -199,66 +189,152 @@ function evaluatePace({ used, limit = 100, resetsAt, periodSeconds, now = Date.n
 
 export default class OpenUsage extends View {
   init(_props, cx) {
-    this.providers = {};
-    for (const key of Object.keys(PROVIDERS)) {
-      this.providers[key] = {
-        data: null,
-        at: 0,
-        loading: false,
-        error: null,
-        warning: null,
-      };
-      // Schedule background periodic poll
-      cx.timer.every(PROVIDERS[key].poll, (cx) => this.refresh(key, cx));
-    }
+    this.viewMode = props()?.view === "settings" ? "settings" : "dashboard";
+    this.accounts = [];
+    this.accountData = {};
+    this.containerWidth = 800;
+
+    // Load configured multi-accounts from accounts.py
+    this.loadAccounts(cx);
 
     // Refresh countdowns & relative timestamps every 30s
     cx.timer.every(30_000, (cx) => cx.notify());
-
-    // Initial fetch for all providers
-    for (const key of Object.keys(PROVIDERS)) {
-      this.refresh(key, cx);
-    }
   }
 
-  refresh(key, cx) {
-    const prov = this.providers[key];
-    if (!prov || prov.loading) return;
-    prov.loading = true;
+  loadAccounts(cx) {
+    cx.spawn(async (cx) => {
+      try {
+        const scriptPath = `${appHome()}/mods/openusage/helpers/accounts.py`;
+        const res = await exec("python3", [scriptPath, "list"]);
+        if (res.code === 0) {
+          const cfg = JSON.parse(res.stdout);
+          this.accounts = cfg.accounts ?? [];
+        }
+      } catch (err) {
+        // Fallback default accounts
+        this.accounts = [
+          { id: "claude-default", provider: "claude", name: "Claude Code", label: "Work", enabled: true },
+          { id: "codex-default", provider: "codex", name: "OpenAI Codex", label: "Personal", enabled: true },
+          { id: "antigravity-default", provider: "antigravity", name: "Google Antigravity", label: "Default", enabled: true },
+          { id: "opencode-default", provider: "opencode", name: "OpenCode", label: "Go", enabled: true },
+        ];
+      }
+
+      // Initialize data state for each account and fetch
+      for (const acc of this.accounts) {
+        if (!this.accountData[acc.id]) {
+          this.accountData[acc.id] = { data: null, at: 0, loading: false, error: null, warning: null };
+        }
+        if (acc.enabled !== false) {
+          this.refreshAccount(acc, cx);
+        }
+      }
+      cx.notify();
+    });
+  }
+
+  refreshAccount(account, cx) {
+    const provMeta = PROVIDER_METAS[account.provider];
+    if (!provMeta) return;
+
+    let provState = this.accountData[account.id];
+    if (!provState) {
+      provState = { data: null, at: 0, loading: false, error: null, warning: null };
+      this.accountData[account.id] = provState;
+    }
+    if (provState.loading) return;
+
+    provState.loading = true;
     cx.notify();
 
     cx.spawn(async (cx) => {
       try {
-        const scriptPath = `${appHome()}/mods/openusage/${PROVIDERS[key].script}`;
-        const res = await exec("python3", [scriptPath]);
+        const scriptPath = `${appHome()}/mods/openusage/${provMeta.script}`;
+        const args = [scriptPath];
+        if (account.provider === "claude" && account.keychainService) {
+          args.push(account.keychainService);
+        } else if (account.provider === "codex" && account.authPath) {
+          args.push(account.authPath);
+        }
+
+        const res = await exec("python3", args);
         if (res.code !== 0) {
-          throw new Error(res.stderr.trim() || `Script exited with code ${res.code}`);
+          throw new Error(res.stderr.trim() || `Script exited ${res.code}`);
         }
         const data = JSON.parse(res.stdout);
         if (!data.ok) {
-          throw new Error(data.error || "Fetch returned unsuccessful response");
+          throw new Error(data.error || "Unsuccessful response");
         }
-        prov.data = data;
-        prov.at = data.fetched_at ? data.fetched_at * 1000 : Date.now();
-        prov.error = null;
-        prov.warning = data.warning ?? null;
+        provState.data = data;
+        provState.at = data.fetched_at ? data.fetched_at * 1000 : Date.now();
+        provState.error = null;
+        provState.warning = data.warning ?? null;
       } catch (err) {
-        prov.error = String(err?.message ?? err);
+        provState.error = String(err?.message ?? err);
       } finally {
-        prov.loading = false;
+        provState.loading = false;
         cx.notify();
       }
     });
   }
 
   refreshAll(cx) {
-    for (const key of Object.keys(PROVIDERS)) {
-      this.refresh(key, cx);
+    for (const acc of this.accounts) {
+      if (acc.enabled !== false) {
+        this.refreshAccount(acc, cx);
+      }
     }
   }
 
+  toggleAccount(accId, cx) {
+    cx.spawn(async (cx) => {
+      try {
+        const scriptPath = `${appHome()}/mods/openusage/helpers/accounts.py`;
+        await exec("python3", [scriptPath, "toggle", accId]);
+        this.loadAccounts(cx);
+      } catch (err) {
+        cx.notify();
+      }
+    });
+  }
+
+  deleteAccount(accId, cx) {
+    cx.spawn(async (cx) => {
+      try {
+        const scriptPath = `${appHome()}/mods/openusage/helpers/accounts.py`;
+        await exec("python3", [scriptPath, "remove", accId]);
+        this.loadAccounts(cx);
+      } catch (err) {
+        cx.notify();
+      }
+    });
+  }
+
+  addAccountPreset(provider, label, customArg, cx) {
+    cx.spawn(async (cx) => {
+      try {
+        const meta = PROVIDER_METAS[provider];
+        const newAcc = {
+          id: `${provider}-${Date.now().toString(36)}`,
+          provider,
+          name: meta?.name ?? provider,
+          label: label || "New Account",
+          enabled: true,
+        };
+        if (provider === "claude" && customArg) newAcc.keychainService = customArg;
+        if (provider === "codex" && customArg) newAcc.authPath = customArg;
+
+        const scriptPath = `${appHome()}/mods/openusage/helpers/accounts.py`;
+        await exec("python3", [scriptPath, "add", JSON.stringify(newAcc)]);
+        this.loadAccounts(cx);
+      } catch (err) {
+        cx.notify();
+      }
+    });
+  }
+
   isAnyLoading() {
-    return Object.values(this.providers).some((p) => p.loading);
+    return Object.values(this.accountData).some((p) => p.loading);
   }
 
   getOverallPacingSummary(t) {
@@ -274,23 +350,24 @@ export default class OpenUsage extends View {
       else if (res.status === "ahead" || res.status === "healthy") aheadCount++;
     };
 
-    const p = this.providers;
-    if (p.claude.data) {
-      test(p.claude.data.five_hour, PERIODS.session);
-      test(p.claude.data.seven_day, PERIODS.weekly);
-    }
-    if (p.codex.data) {
-      test(p.codex.data.five_hour, PERIODS.session);
-      test(p.codex.data.seven_day, PERIODS.weekly);
-    }
-    if (p.antigravity.data) {
-      test(p.antigravity.data.five_hour, PERIODS.session);
-      test(p.antigravity.data.seven_day, PERIODS.weekly);
-    }
-    if (p.opencode.data) {
-      test(p.opencode.data.rolling, PERIODS.rolling);
-      test(p.opencode.data.weekly, PERIODS.weekly);
-      test(p.opencode.data.monthly, PERIODS.monthly);
+    for (const acc of this.accounts) {
+      if (acc.enabled === false) continue;
+      const p = this.accountData[acc.id];
+      if (!p?.data) continue;
+      if (acc.provider === "claude") {
+        test(p.data.five_hour, PERIODS.session);
+        test(p.data.seven_day, PERIODS.weekly);
+      } else if (acc.provider === "codex") {
+        test(p.data.five_hour, PERIODS.session);
+        test(p.data.seven_day, PERIODS.weekly);
+      } else if (acc.provider === "antigravity") {
+        test(p.data.five_hour, PERIODS.session);
+        test(p.data.seven_day, PERIODS.weekly);
+      } else if (acc.provider === "opencode") {
+        test(p.data.rolling, PERIODS.rolling);
+        test(p.data.weekly, PERIODS.weekly);
+        test(p.data.monthly, PERIODS.monthly);
+      }
     }
 
     if (behindCount > 0) {
@@ -310,23 +387,15 @@ export default class OpenUsage extends View {
       if (t > Date.now() && t < earliest) earliest = t;
     };
 
-    const p = this.providers;
-    if (p.claude.data) {
-      check(p.claude.data.five_hour?.resets_at);
-      check(p.claude.data.seven_day?.resets_at);
-    }
-    if (p.codex.data) {
-      check(p.codex.data.five_hour?.resets_at);
-      check(p.codex.data.seven_day?.resets_at);
-    }
-    if (p.antigravity.data) {
-      check(p.antigravity.data.five_hour?.resets_at);
-      check(p.antigravity.data.seven_day?.resets_at);
-    }
-    if (p.opencode.data) {
-      check(p.opencode.data.rolling?.resets_at);
-      check(p.opencode.data.weekly?.resets_at);
-      check(p.opencode.data.monthly?.resets_at);
+    for (const acc of this.accounts) {
+      if (acc.enabled === false) continue;
+      const p = this.accountData[acc.id];
+      if (!p?.data) continue;
+      check(p.data.five_hour?.resets_at);
+      check(p.data.seven_day?.resets_at);
+      check(p.data.rolling?.resets_at);
+      check(p.data.weekly?.resets_at);
+      check(p.data.monthly?.resets_at);
     }
     return earliest < Infinity ? countdown(earliest) : null;
   }
@@ -337,8 +406,7 @@ export default class OpenUsage extends View {
   }
 
   /**
-   * Renders a Gauge representing Remaining Amount (잔여량)
-   * with OpenUsage constant-rate pace guide marker line and status color.
+   * Renders the Remaining Gauge with OpenUsage Pace Guide Line
    */
   renderPacedMetricRow(t, label, windowData, periodSeconds) {
     if (!windowData) return null;
@@ -355,11 +423,9 @@ export default class OpenUsage extends View {
     const remaining = Math.round(pace.remainingPercent);
     const resetNote = countdown(resetsAt);
 
-    // Color based on whether user is within or exceeding linear burn guide
     let barColor = t.done;
     let badgeText = pace.statusText || `${remaining}% left`;
     let badgeTextColor = t.done;
-    let badgeBg = t.surface;
 
     if (pace.status === "spent") {
       barColor = t.blocked;
@@ -378,7 +444,6 @@ export default class OpenUsage extends View {
       badgeTextColor = t.done;
       badgeText = pace.statusText;
     } else {
-      // unpaced fallback
       barColor = remaining <= 10 ? t.blocked : remaining <= 30 ? t.working : t.done;
       badgeTextColor = barColor;
       badgeText = `${remaining}% left`;
@@ -391,7 +456,6 @@ export default class OpenUsage extends View {
     return v_flex()
       .w_full()
       .gap(5)
-      // Top Row: Window Label + Reset countdown pill
       .child(
         h_flex()
           .items_center()
@@ -416,7 +480,6 @@ export default class OpenUsage extends View {
                 )
               )
           )
-          // Right: Pacing Status Badge (OpenUsage style)
           .child(
             div()
               .px(6)
@@ -431,7 +494,6 @@ export default class OpenUsage extends View {
               .child(badgeText)
           )
       )
-      // Middle Row: Remaining Gauge Track with Linear Pace Guide Marker
       .child(
         div()
           .relative()
@@ -441,7 +503,6 @@ export default class OpenUsage extends View {
           .bg(t.border)
           .overflow_hidden()
           .flex_none()
-          // Remaining Gauge Bar (잔여량 게이지)
           .child(
             div()
               .absolute()
@@ -452,7 +513,6 @@ export default class OpenUsage extends View {
               .rounded(4)
               .bg(barColor)
           )
-          // OpenUsage Linear Pace Guide Line (일정 소비 가이드 기준선)
           .when(guidePct != null, (el) =>
             el.child(
               div()
@@ -466,7 +526,6 @@ export default class OpenUsage extends View {
             )
           )
       )
-      // Bottom Row: Explanatory readout (Actual Remaining vs Pace Guide Expected)
       .child(
         h_flex()
           .items_center()
@@ -498,119 +557,43 @@ export default class OpenUsage extends View {
       );
   }
 
-  renderClaudeCard(t, key, prov, cx) {
-    const data = prov.data;
-    const activeAgents = this.getActiveAgentsFor("claude");
-
-    return this.renderCardContainer(
-      t,
-      key,
-      PROVIDERS[key].name,
-      PROVIDERS[key].icon,
-      "Official OAuth",
-      prov,
-      activeAgents,
-      cx,
-      [
-        data?.five_hour
-          ? this.renderPacedMetricRow(t, "5-Hour Session Limit", data.five_hour, PERIODS.session)
-          : div().text_size(11).text_color(t.dim).child("5-Hour Session: full quota available (fresh)"),
-        data?.seven_day
-          ? this.renderPacedMetricRow(t, "7-Day Weekly Limit", data.seven_day, PERIODS.weekly)
-          : null,
-      ]
-    );
-  }
-
-  renderCodexCard(t, key, prov, cx) {
-    const data = prov.data;
-    const activeAgents = this.getActiveAgentsFor("codex");
-    const planName = data?.plan ? `Plan ${data.plan.toUpperCase()}` : "ChatGPT Plus/Pro";
-
-    return this.renderCardContainer(
-      t,
-      key,
-      PROVIDERS[key].name,
-      PROVIDERS[key].icon,
-      planName,
-      prov,
-      activeAgents,
-      cx,
-      [
-        data?.five_hour
-          ? this.renderPacedMetricRow(t, "5-Hour Session Limit", data.five_hour, PERIODS.session)
-          : null,
-        data?.seven_day
-          ? this.renderPacedMetricRow(t, "7-Day Weekly Limit", data.seven_day, PERIODS.weekly)
-          : null,
-      ]
-    );
-  }
-
-  renderAntigravityCard(t, key, prov, cx) {
-    const data = prov.data;
-    const activeAgents = this.getActiveAgentsFor("antigravity");
-    const bucketTitle = data?.bucket ?? "Gemini Models";
+  /**
+   * Renders a Single Multi-Account Card (Full Dashboard view)
+   */
+  renderAccountCard(t, account, cx) {
+    const provMeta = PROVIDER_METAS[account.provider] ?? PROVIDER_METAS.antigravity;
+    const state = this.accountData[account.id] ?? { data: null, at: 0, loading: false };
+    const data = state.data;
+    const activeAgents = this.getActiveAgentsFor(provMeta.app);
+    const isStale = state.at > 0 && Date.now() - state.at > provMeta.stale;
 
     const rows = [];
-    if (data?.five_hour) {
-      rows.push(this.renderPacedMetricRow(t, `${bucketTitle} (5-Hour)`, data.five_hour, PERIODS.session));
-    }
-    if (data?.seven_day) {
-      rows.push(this.renderPacedMetricRow(t, `${bucketTitle} (Weekly)`, data.seven_day, PERIODS.weekly));
-    }
-
-    // Secondary buckets (Claude & GPT models quota)
-    for (const b of data?.buckets ?? []) {
-      if (b.five_hour || b.seven_day) {
-        rows.push(
-          div().pt(4).text_size(10.5).font_semibold().text_color(t.muted).child(b.name ?? "Other Models")
-        );
-        if (b.five_hour) rows.push(this.renderPacedMetricRow(t, "5-Hour", b.five_hour, PERIODS.session));
-        if (b.seven_day) rows.push(this.renderPacedMetricRow(t, "Weekly", b.seven_day, PERIODS.weekly));
+    if (account.provider === "claude") {
+      if (data?.five_hour) rows.push(this.renderPacedMetricRow(t, "5-Hour Session Limit", data.five_hour, PERIODS.session));
+      else rows.push(div().text_size(11).text_color(t.dim).child("5-Hour Session: full quota available (fresh)"));
+      if (data?.seven_day) rows.push(this.renderPacedMetricRow(t, "7-Day Weekly Limit", data.seven_day, PERIODS.weekly));
+    } else if (account.provider === "codex") {
+      if (data?.five_hour) rows.push(this.renderPacedMetricRow(t, "5-Hour Session Limit", data.five_hour, PERIODS.session));
+      if (data?.seven_day) rows.push(this.renderPacedMetricRow(t, "7-Day Weekly Limit", data.seven_day, PERIODS.weekly));
+    } else if (account.provider === "antigravity") {
+      const bucketTitle = data?.bucket ?? "Gemini Models";
+      if (data?.five_hour) rows.push(this.renderPacedMetricRow(t, `${bucketTitle} (5-Hour)`, data.five_hour, PERIODS.session));
+      if (data?.seven_day) rows.push(this.renderPacedMetricRow(t, `${bucketTitle} (Weekly)`, data.seven_day, PERIODS.weekly));
+      for (const b of data?.buckets ?? []) {
+        if (b.five_hour || b.seven_day) {
+          rows.push(div().pt(4).text_size(10.5).font_semibold().text_color(t.muted).child(b.name ?? "Other Models"));
+          if (b.five_hour) rows.push(this.renderPacedMetricRow(t, "5-Hour", b.five_hour, PERIODS.session));
+          if (b.seven_day) rows.push(this.renderPacedMetricRow(t, "Weekly", b.seven_day, PERIODS.weekly));
+        }
       }
+    } else if (account.provider === "opencode") {
+      if (data?.rolling) rows.push(this.renderPacedMetricRow(t, "Rolling Limit", data.rolling, PERIODS.rolling));
+      if (data?.weekly) rows.push(this.renderPacedMetricRow(t, "Weekly Limit", data.weekly, PERIODS.weekly));
+      if (data?.monthly) rows.push(this.renderPacedMetricRow(t, "Monthly Limit", data.monthly, PERIODS.monthly));
     }
-
-    return this.renderCardContainer(
-      t,
-      key,
-      PROVIDERS[key].name,
-      PROVIDERS[key].icon,
-      "CLI /usage",
-      prov,
-      activeAgents,
-      cx,
-      rows
-    );
-  }
-
-  renderOpencodeCard(t, key, prov, cx) {
-    const data = prov.data;
-    const activeAgents = this.getActiveAgentsFor("opencode");
-    const wsName = data?.workspace ? `Workspace: ${data.workspace}` : "OpenCode Go";
-
-    return this.renderCardContainer(
-      t,
-      key,
-      PROVIDERS[key].name,
-      PROVIDERS[key].icon,
-      wsName,
-      prov,
-      activeAgents,
-      cx,
-      [
-        data?.rolling ? this.renderPacedMetricRow(t, "Rolling Limit", data.rolling, PERIODS.rolling) : null,
-        data?.weekly ? this.renderPacedMetricRow(t, "Weekly Limit", data.weekly, PERIODS.weekly) : null,
-        data?.monthly ? this.renderPacedMetricRow(t, "Monthly Limit", data.monthly, PERIODS.monthly) : null,
-      ]
-    );
-  }
-
-  renderCardContainer(t, key, name, iconPath, planBadge, prov, activeAgents, cx, metricRows) {
-    const isStale = prov.at > 0 && Date.now() - prov.at > PROVIDERS[key].stale;
 
     return v_flex()
-      .id(`card-${key}`)
+      .id(`acc-${account.id}`)
       .flex_1()
       .min_w(360)
       .bg(t.raised)
@@ -620,7 +603,7 @@ export default class OpenUsage extends View {
       .p(14)
       .gap(12)
       .child(
-        // Card Header
+        // Card Top Header
         h_flex()
           .items_center()
           .justify_between()
@@ -628,7 +611,7 @@ export default class OpenUsage extends View {
             h_flex()
               .gap(8)
               .items_center()
-              .child(svg(iconPath).size(18))
+              .child(svg(provMeta.icon).size(18))
               .child(
                 v_flex()
                   .gap(1)
@@ -636,7 +619,7 @@ export default class OpenUsage extends View {
                     h_flex()
                       .gap(6)
                       .items_center()
-                      .child(div().font_bold().text_size(13).text_color(t.foreground).child(name))
+                      .child(div().font_bold().text_size(13).text_color(t.foreground).child(account.name))
                       .child(
                         div()
                           .px(5)
@@ -647,7 +630,7 @@ export default class OpenUsage extends View {
                           .border_color(t.border)
                           .text_size(9.5)
                           .text_color(t.dim)
-                          .child(planBadge)
+                          .child(account.label || "Default")
                       )
                   )
               )
@@ -672,14 +655,13 @@ export default class OpenUsage extends View {
               )
               .child(
                 div()
-                  .id(`refresh-${key}`)
                   .p(4)
                   .rounded(4)
                   .cursor_pointer()
                   .hover((s) => s.bg(t.hover))
-                  .on_click((_e, cx) => this.refresh(key, cx))
+                  .on_click((_e, cx) => this.refreshAccount(account, cx))
                   .child(
-                    prov.loading
+                    state.loading
                       ? svg("mods/workspace-chrome/spinner.svg").size(14).spin(900)
                       : svg("mods/openusage/icons/refresh.svg").size(14)
                   )
@@ -707,7 +689,7 @@ export default class OpenUsage extends View {
                   div()
                     .text_size(11)
                     .text_color(t.foreground)
-                    .child(`${activeAgents.length} active Herdr agent (${activeAgents.map((a) => a.terminal).join(", ")})`)
+                    .child(`${activeAgents.length} active agent (${activeAgents.map((a) => a.terminal).join(", ")})`)
                 )
             )
             .child(
@@ -716,19 +698,17 @@ export default class OpenUsage extends View {
                 .text_size(10.5)
                 .text_color(t.accent)
                 .on_click(() => {
-                  if (activeAgents[0]?.terminal) {
-                    run("agent.focus", { terminal: activeAgents[0].terminal });
-                  }
+                  if (activeAgents[0]?.terminal) run("agent.focus", { terminal: activeAgents[0].terminal });
                 })
                 .child("Focus →")
             )
         )
       )
-      // Metrics with Remaining Gauges and Linear Pace Guide
+      // Metric Gauges
       .child(
         v_flex()
           .gap(10)
-          .children(metricRows.filter(Boolean))
+          .children(rows.filter(Boolean))
       )
       // Card Footer
       .child(
@@ -740,28 +720,441 @@ export default class OpenUsage extends View {
           .justify_between()
           .text_size(10.5)
           .text_color(t.dim)
+          .child(div().child(state.loading ? "Updating..." : `Updated ${timeAgo(state.at)}`))
+          .when(Boolean(state.error), (el) =>
+            el.child(div().text_color(t.blocked).truncate().child(`Error: ${state.error}`))
+          )
+      );
+  }
+
+  /**
+   * Compact Sidebar View (for Spaces/Agents sidebar placement)
+   */
+  renderSidebar(cx, t) {
+    const anyLoading = this.isAnyLoading();
+    const overall = this.getOverallPacingSummary(t);
+
+    return v_flex()
+      .size_full()
+      .bg(t.chrome)
+      .text_color(t.foreground)
+      .text_size(11.5)
+      // Sidebar Header
+      .child(
+        h_flex()
+          .px(10)
+          .py(6)
+          .items_center()
+          .justify_between()
+          .border_b(1)
+          .border_color(t.border)
           .child(
-            div().child(
-              prov.loading
-                ? "Updating from provider..."
-                : `Updated ${timeAgo(prov.at)}`
+            h_flex()
+              .gap(6)
+              .items_center()
+              .child(svg("mods/openusage/icons/openusage.svg").size(14).text_color(t.accent))
+              .child(div().font_bold().text_size(11.5).child("Usages"))
+              .child(div().size(6).rounded(3).bg(overall.color))
+          )
+          .child(
+            h_flex()
+              .gap(4)
+              .items_center()
+              .child(
+                div()
+                  .p(3)
+                  .rounded(3)
+                  .cursor_pointer()
+                  .hover((s) => s.bg(t.hover))
+                  .on_click((_e, cx) => this.refreshAll(cx))
+                  .child(
+                    anyLoading
+                      ? svg("mods/workspace-chrome/spinner.svg").size(12).spin(900)
+                      : svg("mods/openusage/icons/refresh.svg").size(12)
+                  )
+              )
+              .child(
+                div()
+                  .px(4)
+                  .py(2)
+                  .rounded(3)
+                  .cursor_pointer()
+                  .text_size(10)
+                  .text_color(t.muted)
+                  .hover((s) => s.bg(t.hover))
+                  .on_click(() => run("mod.open", { name: "openusage" }))
+                  .child("↗ Open")
+              )
+          )
+      )
+      // Compact Accounts List
+      .child(
+        v_flex()
+          .flex_1()
+          .overflow_y_scrollbar()
+          .p(6)
+          .gap(6)
+          .children(
+            this.accounts
+              .filter((acc) => acc.enabled !== false)
+              .map((acc) => this.renderSidebarAccountRow(t, acc, cx))
+          )
+      );
+  }
+
+  renderSidebarAccountRow(t, acc, cx) {
+    const provMeta = PROVIDER_METAS[acc.provider] ?? PROVIDER_METAS.antigravity;
+    const state = this.accountData[acc.id] ?? { data: null };
+    const data = state.data;
+
+    // Pick primary window (five_hour or weekly or monthly)
+    let w = data?.five_hour || data?.rolling || data?.weekly || data?.monthly;
+    let period = PERIODS.session;
+    if (data?.rolling) period = PERIODS.rolling;
+    else if (data?.weekly) period = PERIODS.weekly;
+    else if (data?.monthly) period = PERIODS.monthly;
+
+    const used = clamp(w?.utilization ?? 0);
+    const pace = evaluatePace({ used, resetsAt: w?.resets_at, periodSeconds: period });
+    const rem = Math.round(pace.remainingPercent);
+    const resetNote = countdown(w?.resets_at);
+
+    let dotColor = t.done;
+    if (pace.status === "spent" || pace.status === "behind") dotColor = t.blocked;
+    else if (pace.status === "onTrack") dotColor = t.working;
+
+    const guidePct = pace.guideRemainingPercent != null
+      ? Math.round(clamp(pace.guideRemainingPercent, 1, 99))
+      : null;
+
+    return v_flex()
+      .p(6)
+      .gap(4)
+      .rounded(5)
+      .bg(t.surface)
+      .border(1)
+      .border_color(t.border)
+      .cursor_pointer()
+      .hover((s) => s.bg(t.hover))
+      .on_click(() => run("mod.open", { name: "openusage" }))
+      .child(
+        h_flex()
+          .items_center()
+          .justify_between()
+          .child(
+            h_flex()
+              .gap(5)
+              .items_center()
+              .child(svg(provMeta.icon).size(13))
+              .child(div().font_semibold().text_size(10.5).truncate().child(acc.label ? `${acc.name} (${acc.label})` : acc.name))
+          )
+          .child(
+            h_flex()
+              .gap(4)
+              .items_center()
+              .child(div().size(5).rounded(3).bg(dotColor))
+              .child(div().font_bold().text_size(10.5).text_color(dotColor).child(`${rem}%`))
+          )
+      )
+      // Gauge with Guide Tick
+      .child(
+        div()
+          .relative()
+          .w_full()
+          .h(4)
+          .rounded(2)
+          .bg(t.border)
+          .overflow_hidden()
+          .child(
+            div()
+              .absolute()
+              .left(0)
+              .top(0)
+              .h_full()
+              .w(`${rem}%`)
+              .rounded(2)
+              .bg(dotColor)
+          )
+          .when(guidePct != null, (el) =>
+            el.child(
+              div()
+                .absolute()
+                .left(`${guidePct}%`)
+                .top(0)
+                .h_full()
+                .w(1.5)
+                .bg(t.foreground)
+                .opacity(0.8)
             )
           )
-          .when(Boolean(prov.error), (el) =>
-            el.child(
-              div().text_color(t.blocked).truncate().child(`Error: ${prov.error}`)
-            )
+      )
+      .child(
+        h_flex()
+          .items_center()
+          .justify_between()
+          .text_size(9.5)
+          .text_color(t.dim)
+          .child(div().child(guidePct != null ? `Guide ~${guidePct}%` : "Quota"))
+          .child(div().child(resetNote ? `↻ ${resetNote}` : "active"))
+      );
+  }
+
+  /**
+   * Settings & Multi-Account Management Screen
+   */
+  renderSettings(cx, t) {
+    return v_flex()
+      .size_full()
+      .bg(t.canvas)
+      .text_color(t.foreground)
+      .text_size(12)
+      // Top Settings Bar
+      .child(
+        h_flex()
+          .px(18)
+          .py(12)
+          .bg(t.chrome)
+          .border_b(1)
+          .border_color(t.border)
+          .items_center()
+          .justify_between()
+          .child(
+            h_flex()
+              .gap(10)
+              .items_center()
+              .child(
+                div()
+                  .px(8)
+                  .py(4)
+                  .rounded(4)
+                  .bg(t.raised)
+                  .border(1)
+                  .border_color(t.border)
+                  .cursor_pointer()
+                  .hover((s) => s.bg(t.hover))
+                  .on_click(() => {
+                    this.viewMode = "dashboard";
+                    cx.notify();
+                  })
+                  .child("← Back to Dashboard")
+              )
+              .child(div().font_bold().text_size(15).child("OpenUsage Settings & Accounts"))
           )
-          .when(Boolean(prov.warning && !prov.error), (el) =>
-            el.child(
-              div().text_color(t.working).truncate().child(`Warning: ${prov.warning}`)
-            )
+          .child(
+            div()
+              .px(8)
+              .py(4)
+              .rounded(4)
+              .text_color(t.muted)
+              .child("Config: ~/.config/herdr-app/openusage-accounts.json")
+          )
+      )
+      // Settings Body
+      .child(
+        v_flex()
+          .flex_1()
+          .overflow_y_scrollbar()
+          .p(20)
+          .gap(20)
+          // Section 1: Configured Multi-Accounts
+          .child(
+            v_flex()
+              .gap(10)
+              .child(
+                h_flex()
+                  .items_center()
+                  .justify_between()
+                  .child(div().font_bold().text_size(13).child("Configured Accounts (등록된 계정 목록)"))
+                  .child(div().text_size(11).text_color(t.dim).child(`${this.accounts.length} accounts configured`))
+              )
+              .child(
+                v_flex()
+                  .gap(8)
+                  .children(
+                    this.accounts.map((acc) =>
+                      h_flex()
+                        .p(12)
+                        .rounded(6)
+                        .bg(t.raised)
+                        .border(1)
+                        .border_color(t.border)
+                        .items_center()
+                        .justify_between()
+                        .child(
+                          h_flex()
+                            .gap(10)
+                            .items_center()
+                            .child(svg(PROVIDER_METAS[acc.provider]?.icon ?? "icons/codex.svg").size(18))
+                            .child(
+                              v_flex()
+                                .gap(2)
+                                .child(
+                                  h_flex()
+                                    .gap(6)
+                                    .items_center()
+                                    .child(div().font_semibold().text_size(12.5).child(acc.name))
+                                    .child(
+                                      div()
+                                        .px(5)
+                                        .py(1)
+                                        .rounded(3)
+                                        .bg(t.surface)
+                                        .border(1)
+                                        .border_color(t.border)
+                                        .text_size(10)
+                                        .child(acc.label || "Default")
+                                    )
+                                )
+                                .child(
+                                  div()
+                                    .text_size(10.5)
+                                    .text_color(t.dim)
+                                    .child(
+                                      acc.authType === "keychain"
+                                        ? `Keychain: ${acc.keychainService}`
+                                        : acc.authType === "auth_file"
+                                        ? `Path: ${acc.authPath}`
+                                        : "Default CLI integration"
+                                    )
+                                )
+                            )
+                        )
+                        .child(
+                          h_flex()
+                            .gap(8)
+                            .items_center()
+                            .child(
+                              div()
+                                .px(8)
+                                .py(4)
+                                .rounded(4)
+                                .cursor_pointer()
+                                .bg(acc.enabled !== false ? t.surface : t.border)
+                                .border(1)
+                                .border_color(t.border)
+                                .hover((s) => s.bg(t.hover))
+                                .on_click((_e, cx) => this.toggleAccount(acc.id, cx))
+                                .child(acc.enabled !== false ? "● Enabled" : "○ Disabled")
+                            )
+                            .child(
+                              div()
+                                .px(8)
+                                .py(4)
+                                .rounded(4)
+                                .cursor_pointer()
+                                .text_color(t.blocked)
+                                .hover((s) => s.bg(t.hover))
+                                .on_click((_e, cx) => this.deleteAccount(acc.id, cx))
+                                .child("Delete")
+                            )
+                        )
+                    )
+                  )
+              )
+          )
+          // Section 2: Add New Account Presets
+          .child(
+            v_flex()
+              .gap(10)
+              .child(div().font_bold().text_size(13).child("Add Account (계정 추가)"))
+              .child(
+                div()
+                  .text_size(11)
+                  .text_color(t.dim)
+                  .child("원하는 프로바이더의 계정을 추가하여 여러 계정의 사용량을 동시에 모니터링할 수 있습니다.")
+              )
+              .child(
+                h_flex()
+                  .gap(10)
+                  .flex_wrap()
+                  .child(
+                    div()
+                      .px(12)
+                      .py(8)
+                      .rounded(6)
+                      .bg(t.raised)
+                      .border(1)
+                      .border_color(t.border)
+                      .cursor_pointer()
+                      .hover((s) => s.bg(t.hover))
+                      .on_click((_e, cx) => this.addAccountPreset("claude", "Personal", "Claude Code-credentials-personal", cx))
+                      .child("+ Add Claude (Personal)")
+                  )
+                  .child(
+                    div()
+                      .px(12)
+                      .py(8)
+                      .rounded(6)
+                      .bg(t.raised)
+                      .border(1)
+                      .border_color(t.border)
+                      .cursor_pointer()
+                      .hover((s) => s.bg(t.hover))
+                      .on_click((_e, cx) => this.addAccountPreset("codex", "Work", "~/.codex-work/auth.json", cx))
+                      .child("+ Add Codex (Work auth.json)")
+                  )
+                  .child(
+                    div()
+                      .px(12)
+                      .py(8)
+                      .rounded(6)
+                      .bg(t.raised)
+                      .border(1)
+                      .border_color(t.border)
+                      .cursor_pointer()
+                      .hover((s) => s.bg(t.hover))
+                      .on_click((_e, cx) => this.addAccountPreset("antigravity", "Team", null, cx))
+                      .child("+ Add Antigravity Profile")
+                  )
+                  .child(
+                    div()
+                      .px(12)
+                      .py(8)
+                      .rounded(6)
+                      .bg(t.raised)
+                      .border(1)
+                      .border_color(t.border)
+                      .cursor_pointer()
+                      .hover((s) => s.bg(t.hover))
+                      .on_click((_e, cx) => this.addAccountPreset("opencode", "Work", null, cx))
+                      .child("+ Add OpenCode Profile")
+                  )
+              )
+          )
+          // Section 3: Direct Config File & Layout Integration Guide
+          .child(
+            v_flex()
+              .p(14)
+              .rounded(8)
+              .bg(t.raised)
+              .border(1)
+              .border_color(t.border)
+              .gap(8)
+              .child(div().font_semibold().text_size(12).child("사이드바(Spaces/Agents) 배치 안내"))
+              .child(
+                div()
+                  .text_size(11)
+                  .text_color(t.muted)
+                  .child("Herdr의 `layouts/main.json`의 `sidebar-lists` 블록에 `openusage`를 등록하면 왼쪽 사이드바에서 Spaces, Agents와 함께 컴팩트 게이지로 상시 모니터링할 수 있습니다.")
+              )
           )
       );
   }
 
   render(cx) {
     const t = theme();
+    const isSidebarRole = props()?.role === "sidebar";
+
+    // If rendered as sidebar block
+    if (isSidebarRole) {
+      return this.renderSidebar(cx, t);
+    }
+
+    // If in Settings mode
+    if (this.viewMode === "settings") {
+      return this.renderSettings(cx, t);
+    }
+
     const overallPacing = this.getOverallPacingSummary(t);
     const earliestReset = this.getEarliestReset();
     const allAgents = agents();
@@ -784,7 +1177,6 @@ export default class OpenUsage extends View {
           .items_center()
           .justify_between()
           .child(
-            // Left: Logo & Title
             h_flex()
               .gap(10)
               .items_center()
@@ -805,22 +1197,40 @@ export default class OpenUsage extends View {
                           .bg(t.raised)
                           .text_size(10)
                           .text_color(t.muted)
-                          .child("Remaining Quota & Pace Monitor")
+                          .child("Multi-Account Pace Tracker")
                       )
                   )
                   .child(
                     div()
                       .text_size(11)
                       .text_color(t.dim)
-                      .child("Tracks remaining quota against constant linear burn rate (OpenUsage engine)")
+                      .child("Remaining quota vs linear pace across accounts & providers")
                   )
               )
           )
           .child(
-            // Right: Global Action Buttons
             h_flex()
-              .gap(10)
+              .gap(8)
               .items_center()
+              .child(
+                h_flex()
+                  .id("btn-settings")
+                  .px(10)
+                  .py(5)
+                  .rounded(5)
+                  .bg(t.raised)
+                  .border(1)
+                  .border_color(t.border)
+                  .gap(6)
+                  .items_center()
+                  .cursor_pointer()
+                  .hover((s) => s.bg(t.hover))
+                  .on_click(() => {
+                    this.viewMode = "settings";
+                    cx.notify();
+                  })
+                  .child(div().text_size(11.5).font_semibold().child("⚙ Settings / Accounts"))
+              )
               .child(
                 h_flex()
                   .id("btn-refresh-all")
@@ -840,13 +1250,7 @@ export default class OpenUsage extends View {
                       ? svg("mods/workspace-chrome/spinner.svg").size(13).spin(900)
                       : svg("mods/openusage/icons/refresh.svg").size(13)
                   )
-                  .child(
-                    div()
-                      .text_size(11.5)
-                      .font_semibold()
-                      .text_color(t.foreground)
-                      .child(anyLoading ? "Refreshing..." : "Refresh All")
-                  )
+                  .child(div().text_size(11.5).font_semibold().child(anyLoading ? "Refreshing..." : "Refresh"))
               )
               .when(isOverlay, (el) =>
                 el.child(
@@ -891,12 +1295,7 @@ export default class OpenUsage extends View {
                   .gap(6)
                   .items_center()
                   .child(div().size(6).rounded(3).bg(allAgents.length > 0 ? t.working : t.dim))
-                  .child(
-                    div()
-                      .text_size(11)
-                      .text_color(t.muted)
-                      .child(`${allAgents.length} Herdr Agents Active`)
-                  )
+                  .child(div().text_size(11).text_color(t.muted).child(`${allAgents.length} Herdr Agents Active`))
               )
               .when(Boolean(earliestReset), (el) =>
                 el.child(
@@ -904,16 +1303,10 @@ export default class OpenUsage extends View {
                     .gap(6)
                     .items_center()
                     .child(div().size(6).rounded(3).bg(t.accent))
-                    .child(
-                      div()
-                        .text_size(11)
-                        .text_color(t.muted)
-                        .child(`Next Reset in ${earliestReset}`)
-                    )
+                    .child(div().text_size(11).text_color(t.muted).child(`Next Reset in ${earliestReset}`))
                 )
               )
           )
-          // Right: Pace Guide Indicator Legend
           .child(
             h_flex()
               .gap(12)
@@ -924,7 +1317,7 @@ export default class OpenUsage extends View {
                   .gap(4)
                   .items_center()
                   .child(div().w(2).h(10).bg(t.foreground).opacity(0.85))
-                  .child(div().text_color(t.dim).child("Pace Guide"))
+                  .child(div().text_color(t.dim).child("Pace Guide (|)"))
               )
               .child(
                 h_flex()
@@ -949,7 +1342,7 @@ export default class OpenUsage extends View {
               )
           )
       )
-      // Main Body: Provider Cards Grid
+      // Main Body: Configured Accounts Cards Grid
       .child(
         v_flex()
           .flex_1()
@@ -960,15 +1353,11 @@ export default class OpenUsage extends View {
             h_flex()
               .flex_wrap()
               .gap(14)
-              .child(this.renderClaudeCard(t, "claude", this.providers.claude, cx))
-              .child(this.renderCodexCard(t, "codex", this.providers.codex, cx))
-          )
-          .child(
-            h_flex()
-              .flex_wrap()
-              .gap(14)
-              .child(this.renderAntigravityCard(t, "antigravity", this.providers.antigravity, cx))
-              .child(this.renderOpencodeCard(t, "opencode", this.providers.opencode, cx))
+              .children(
+                this.accounts
+                  .filter((acc) => acc.enabled !== false)
+                  .map((acc) => this.renderAccountCard(t, acc, cx))
+              )
           )
       );
   }

@@ -356,6 +356,15 @@ export async function test_example() {
   - **OpenCode Go**: `opencode api` 기반 Rolling, Weekly, Monthly 한도 조회
 - **Herdr 실행 중인 에이전트 실시간 연동**:
   - `agents()` API를 통해 현재 활성화된 에이전트(예: Antigravity t5 working)를 프로바이더 카드에 표시하고 클릭 한 번으로 포커스 이동 (`Focus →`)
+- **다중 계정(Multi-Account) 지원**:
+  - 서비스별 단일 계정 제한 없이 여러 프로필/계정을 등록하여 동시에 모니터링 가능 (예: `Claude (Work)`, `Claude (Personal)`, `Codex (Team)`, `Antigravity (Profile 2)` 등)
+  - 계정별 인증 소스(Keychain Service 명칭, 커스텀 `auth.json` 경로, CLI 등)를 독립적으로 지정
+- **왼쪽 사이드바(Sidebar) 전용 컴팩트 모드**:
+  - Herdr의 기본 `main` 레이아웃 왼쪽 사이드바(`sidebar-lists`)의 `spaces`, `agents` 바로 아래 `usages` 블록으로 상시 배치 지원
+  - 사이드바 환경에서는 컴팩트한 게이지 바와 리셋 시간, 페이스 상태 닷(🟢/🟡/🔴)으로 표시되며 클릭 시 전체 대시보드 팝업 오버레이 제공
+- **설정 및 계정 관리 화면 (`⚙ Settings / Accounts`)**:
+  - 대시보드 상단 ⚙️ 버튼을 통해 GUI 상에서 등록된 계정 활성화/비활성화 토글, 삭제 및 프리셋 계정 추가 가능
+  - 영구 설정 파일: `~/.config/herdr-app/openusage-accounts.json`을 통해 텍스트 에디터로 직접 계정 목록 및 옵션 편집 가능
 - **글랜서블(Glanceable) 대시보드 UI**:
   - **잔여량(Remaining) 중심 게이지**: 사용량이 아닌 잔여 쿼터(`% remaining`)를 기준으로 게이지 바가 차오르며, 소진될수록 줄어드는 직관적 시각화
   - **OpenUsage 페이스 가이드(Pacing Guide)**:
@@ -371,11 +380,12 @@ export async function test_example() {
 ```
 openusage/
 ├── mod.json          # 모드 설정 (다이얼로그 크기 및 타이틀 정의)
-├── main.js           # GPUI 컴포넌트 뷰 및 라이프사이클/타이머/이벤트 핸들링
-├── helpers/          # 프로바이더별 CLI/API 데이터 수집기
+├── main.js           # GPUI 컴포넌트 뷰 (사이드바 / 대시보드 / 설정 화면 3단 뷰)
+├── helpers/          # 프로바이더별 CLI/API 데이터 수집기 및 계정 매니저
+│   ├── accounts.py   # 다중 계정 설정(~/.config/herdr-app/openusage-accounts.json) CRUD
 │   ├── antigravity.py
-│   ├── claude.py
-│   ├── codex.py
+│   ├── claude.py     # 커스텀 Keychain Service 명칭 지원
+│   ├── codex.py      # 커스텀 auth.json 경로 지원
 │   └── opencode.py
 └── icons/            # SVG 아이콘
     ├── openusage.svg
@@ -383,6 +393,8 @@ openusage/
 ```
 
 ### 14.3 실행 및 배치 방법
+- **왼쪽 사이드바(Spaces/Agents 아래) 배치**:
+  `~/.config/herdr-app/layouts/main.json`의 `sidebar-lists`에 자동 추가되어 실시간 연동됩니다.
 - **다이얼로그 오버레이로 열기**:
   ```bash
   herdr-app do mod.open '{"name":"openusage"}'
