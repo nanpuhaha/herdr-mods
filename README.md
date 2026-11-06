@@ -1,451 +1,225 @@
-# Herdr Desktop App Mods 개발 자료
+# 🐑 Herdr Mods
 
-## 1. herdr란?
+> Supercharge your [Herdr](https://herdr.dev) Agent Desktop App with high-performance, beautiful custom mods.
 
-Herdr은 macOS/Windows/Linux용 코드 에이전트/터미널 관리 데스크톱 앱입니다.  
-터미널과 에이전트를 `herdr-core(`hc`)`에서 관리하고, 앱 창에서 공간(spaces)·탭(tabs)·펜(Panes)으로 구조화합니다.
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-brightgreen.svg)](#)
+[![Herdr Compatibility](https://img.shields.io/badge/herdr--app-compatible-blue.svg)](#)
+[![Version](https://img.shields.io/badge/release-v1.5.1-purple.svg)](CHANGELOG.md)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## 2. 핵심 컴포넌트
+**Herdr Mods** is a curated collection of desktop extensions and workflow modules built with [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui) for the **Herdr** coding agent workspace. 
 
-### 2.1 herdr-core (`hc`)
-- 터미널 및 에이전트 실행/관리 (별도 프로세스)
-- `hc run`, `hc exec`, `hc send`, `hc read`, `hc wait` 등의 명령 제공
-- `hc machine ls`로 원격 머신 관리
+The flagship mod in this repository is **Agent Usage** (`openusage`) — an intelligent, real-time AI quota monitor that consolidates 5-hour sessions, weekly limits, reset countdowns, and consumption pacing across all your AI coding agents directly in the Herdr sidebar and dashboard.
 
-### 2.2 herdr-app
-- UI 창 (터미널/에이전트 표시)
-- `herdr-app do <command>`로 구조 변경
-- `herdr-app ls`, `status`, `commands`로 조회
+---
 
-## 3. 모듈(mod) 구조
+## 📸 Visual Showcase
 
-```
-~/.config/herdr-app/mods/<name>/
-  main.js       # 필수: View 클래스 내보내기
-  mod.json      # { "place": "none" } 또는 { "place": "right|left|top|bottom", "size": 320 }
-  *.js          # 모듈 파일 ("./ui.js" 등)
-  *.svg         # 아이콘
-```
+### 1. Ultra-Slim Rail Complication View (`< 140px`)
+Designed for minimalists. When the sidebar is collapsed into a rail (48px–68px), each provider transforms into a 48x48 dial widget featuring concentric dual arcs, subtle pacing marks, vibrant blue metrics, and a snug-fit vector logo.
 
-### 3.1 mod.json 의 `place` 값
-- `"none"`: 레이아웃이나 다른 모드가 배치할 때만 표시
-- `"right"` / `"left"` / `"top"` / `"bottom"`: 사이드바 혹은 상단/하단 고정
+| Rail Complication (v1.5.1) | Standard Sidebar View (268px) | Full Dashboard Modal (920x660) |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/openusage-rail-v1.5.1-snug.png" width="180" alt="Rail Complication View" /> | <img src="docs/screenshots/openusage-standard-v1.3.0.png" width="280" alt="Standard Sidebar View" /> | <img src="docs/screenshots/openusage-overlay-v1.2.0.png" width="380" alt="Full Dashboard Overlay" /> |
+| *Top 5h continuous arch (`⌒`), bottom 7d cradle (`∪`), calibrated pacing tick, and snug-fit logo* | *Linear progress bars, remaining %, reset countdown timers, and linear pacing markers* | *Comprehensive quota analytics, multi-account overview, pacing diagnostics, and 1-click agent focus* |
 
-### 3.2 View 클래스 구조
+---
 
-```js
-import { View, div } from "gpui-kit";
-import { v_flex, h_flex } from "gpui-base";
-import { exec, spaces, theme, run } from "herdr";
+## ✨ Flagship Mod: Agent Usage (`openusage`)
 
-export default class MyMod extends View {
-  init(_props, cx) {
-    // 모드 초기화: 타이머, 스폰, 키 핸들링
-    cx.timer.every(1000, cx => this.refresh(cx));
-    cx.spawn(async cx => {
-      for (;;) {
-        const c = await nextCommand();  // 키 명령 대기
-        this.handleCommand(c, cx);
-      }
-    });
-  }
-  
-  async close(cx) {
-    // 모드 닫힘 시 정리 (옵션)
-  }
-  
-  render(cx) {
-    const t = theme();
-    return div()
-      .bg(t.surface)
-      .p(10)
-      .child(/* 구조 */);
-  }
-}
-```
+### ⚡ Multi-Provider AI Quota Tracking
+Monitor your active subscriptions and limits across top AI coding providers in one unified view:
+- **Anthropic Claude Code**: 5-hour rolling session & 7-day weekly quota retrieved via macOS Keychain OAuth tokens.
+- **OpenAI Codex**: 5-hour rolling window & 7-day limits retrieved from local session tokens (`~/.codex/auth.json`), with Plus/Pro tier detection.
+- **Google Antigravity**: Real-time integration with `agy -p /usage`, showing separate bucket quotas for Gemini and Claude/GPT models.
+- **OpenCode Go**: Multi-tier tracking for rolling, weekly, and monthly capacity via `opencode api`.
 
-## 4. 핵심 API (herdr 모듈)
+### 📊 4-Tier Adaptive Sidebar Layout
+The widget automatically morphs into optimal layouts as you resize Herdr's sidebar:
+- **Rail Mode (`< 140px`)**: Pure 48x48 icon buttons with concentric dual arcs:
+  - **Upper Arc (5h/24h)**: An 80° smooth arch (`⌒`, 230°–310°) representing short-term session limits.
+  - **Lower Arc (7d)**: A 210° deep cradle (`∪`, 195°–345°) representing weekly rolling quotas.
+  - **Calibrated Pacing Ticks**: 9.0px dial index markers projected onto the tracks indicating expected remaining quota based on elapsed time.
+  - **Glanceable Status**: Vibrant Blue (`#3b82f6`) for healthy quotas, Amber (`#f59e0b`) for caution, Crimson (`#ef4444`) for exhaustion, and Dimmed Grey when depleted.
+  - **Zero Visual Clutter**: Clean geometry without distracting numeric text. Hover tooltips provide exact percentages and reset times.
+- **Narrow Mode (`140px ~ 230px`)**: Compact stacked metric rows with abbreviated labels (`5h`, `7d`).
+- **Standard Mode (`230px ~ 320px`, default 268px)**: Full metric bars, remaining percentages, linear pacing lines, and countdown clocks.
+- **Wide Mode (`>= 320px`)**: Dual-column parallel layout rendering 5h and 7d metrics side-by-side, cutting vertical space consumption by 50%.
 
-### 4.1 Live Data 함수
-| 함수 | 설명 |
-|------|------|
-| `spaces()` | 모든 공간: id, name, named, folder, machine, tabs, branch |
-| `agents()` | 실행 중인 에이전트: status, app, space, tab, pinned, focused |
-| `terminals()` | 모든 core 터미널 |
-| `panes()` | 모델 팬들 (모드 팬 포함) |
-| `machines()` | 연결된 머신: name, layout (loading/ready/unavailable) |
-| `focused()` | 현재 포커스: space, tab, pane, terminal, agent |
-| `layout()` | 현재 레이아웃 트리 |
-| `theme()` | 색상: background, surface, canvas, chrome, accent, border, ansi0..15 등 |
-| `settings()` | zoom, sounds, dark, font 등 사용자 설정 |
-| `keys()` | 모든 키 바인딩 |
-| `commands()` | 모든 앱 명령어 |
-| `layouts()` | 레이아웃 이름 목록 |
+### ⏱️ Smart Pacing Engine
+Don't get locked out before your reset time. The pacing engine calculates your consumption velocity against elapsed window time:
+- 🔵 **Ahead / Healthy**: Consumption is slower than normal; comfortable quota remaining at reset time.
+- 🟡 **On Track**: Consumption aligns closely with normal pace (~90–100% expected utilization).
+- 🔴 **Burning Fast**: Burning through limits rapidly; alerts you before early exhaustion.
 
-### 4.2 Act 함수
-| 함수 | 설명 |
-|------|------|
-| `run(name, args)` | 앱 명령 실행 (space.new, tab.new, pane.split, agent.focus 등) |
-| `exec(cmd, args, options)` | 프로그램 실행 (30s 제한, 8MiB 출력) `on`으로 머신 지정 |
-| `hc(args)` | herdr-core 명령 실행 |
-| `openOverlay(spec)` | 오버레이/다이얼로그/윈도우 표시 |
-| `closeOverlay(id)` | 오버레이 닫기 |
-| `notify({title, body, level})` | 네이티브 알림 |
+### 🔄 Instant Rendering & Zero-Lag Architecture
+- **Non-blocking UX**: Opening the dashboard or switching views renders instantly from background cache (`shared("openusage.accounts_cache")`).
+- **Silent Polling**: Background workers quietly update data every 2–5 minutes without interrupting your workflow.
+- **Manual Force Refresh**: On-demand ↻ button with smooth spin animations when you want real-time verification.
 
-### 4.3 상태 관리
-| 함수 | 설명 |
-|------|------|
-| `shared(key)` | 모든 모드가 읽는 공유 상태 |
-| `setShared(key, value)` | 공유 상태 설정 (재렌더 유발) |
-| `props()` | 모드에 전달된 프로퍼티 |
-| `nextCommand()` | 키 명령 대기 (async) |
+### 👥 Multi-Account Profile Management
+Track multiple personal, work, and team accounts per provider (e.g., `Claude (Work)`, `Claude (Personal)`, `Codex (Team)`):
+- Interactive GUI configuration dialog (`⚙ Settings / Accounts`).
+- Clean JSON backing file at `~/.config/herdr-app/openusage-accounts.json`.
+- Customizable Keychain Service names and auth file paths per account.
 
-## 5. UI 컴포넌트 (gpui-kit)
+---
 
-### 5.1 요소 빌더
-```js
-import { View, div, h_flex, v_flex } from "gpui-kit";
+## 🚀 Quick Start
+
+### 1. Installation
+
+Clone this repository and symlink the `openusage` mod into your Herdr configuration:
+
+```bash
+# Clone repository
+git clone https://github.com/nanpuhaha/herdr-mods.git ~/Project/herdr-mods
+
+# Create mods directory if it doesn't exist
+mkdir -p ~/.config/herdr-app/mods
+
+# Link openusage mod
+ln -s ~/Project/herdr-mods/openusage ~/.config/herdr-app/mods/openusage
 ```
 
-### 5.2 주요 스타일링 메서드 체인
-```
-div()
-  .id("unique")           // 식별자
-  .bg(color)             // 배경색
-  .text_color(color)     // 텍스트 색상
-  .w(n) / .h(n)          // 너비/높이 (px)
-  .p(n) / .px(n) / .py(n) // 패딩
-  .gap(n)                // 자식 간 간격
-  .rounded(n)            // 라운드
-  .border(1)             // 테두리
-  .cursor_pointer()      // 커서 스타일
-  .on_click(fn)          // 클릭 핸들러
-  .on_key_down(fn)       // 키 핸들러
-  .tooltip(text)         // 툴팁
-  .when(cond, fn)        // 조건부 렌더링
-  .child(el)             // 단일 자식
-  .children([...])       // 다중 자식
-```
+### 2. Add to Sidebar Layout
 
-### 5.3 자주 쓰는 패턴
-```js
-// 수직 레이아웃
-v_flex()
-  .size_full()
-  .gap(8)
-  .p(12)
+Edit your Herdr layout file (`~/.config/herdr-app/layouts/main.json`) and insert the `openusage` block inside the sidebar column:
 
-// 수평 레이아웃
-h_flex()
-  .gap(8)
-  .items_center()
-  .justify_between()
-
-// 클릭 가능한 요소
-div()
-  .cursor_pointer()
-  .on_click(() => run("pane.split", { direction: "right" }))
-  .bg(t.accent)
-  .rounded(6)
-```
-
-## 6. 레이아웃 (layouts/)
-
-### 6.1 레이아웃 JSON 구조
 ```json
 {
-  "id": "root",
-  "type": "row",
+  "id": "sidebar",
+  "type": "column",
+  "size": { "px": 268 },
   "children": [
-    {
-      "id": "sidebar",
-      "type": "column",
-      "size": { "px": 240 },
-      "children": [
-        { "id": "spaces", "type": "block", "content": { "mod": "spaces" } },
-        { "id": "agents", "type": "block", "content": { "mod": "agents" } }
-      ]
-    },
-    {
-      "id": "work",
-      "type": "column",
-      "children": [
-        { "id": "tabs", "type": "block", "size": { "px": 30 }, "content": { "mod": "tabs" } },
-        { "id": "main", "type": "block", "content": { "tab": "active" } }
-      ]
-    }
+    { "id": "spaces", "type": "block", "content": { "mod": "spaces" } },
+    { "id": "agents", "type": "block", "content": { "mod": "agents" } },
+    { "id": "usages", "type": "block", "content": { "mod": "openusage" } }
   ]
 }
 ```
 
-### 6.2 노드 타입
-- `block`: 콘텐츠 표시 (`{ mod, props }` 또는 `{ terminal }` 또는 `{ tab: "active" }`)
-- `row` / `column`: 자식 수평/수직 배치
-- `stack`: 하나의 자식만 표시 (header으로 탭 스트립 가능)
+### 3. Verify Installation
 
-## 7. 예시: 실제 mod 들 보기
+Run the Herdr GPUI syntax and runtime check:
 
-### 7.1 herdr-quota (상태표시줄 쿼터 모니터링)
-- `mod.json`: `{ "place": "none" }` (상태줄에 자동 추가됨)
-- `main.js`: `exec`로 `quota-axi --json` 호출, `shared()`로 상태 저장, `theme()` 색상 사용
-- 오버레이 팝업: `openOverlay({ kind: "popup", width: 300, height: …, props: { menu: true } })`
-
-### 7.2 agent-limits (에이전트 사용량 표시)
-- 사이드바의 Agents 목록 하단에 배치
-- `exec()`로 쉘 스크립트 실행 (`limits.sh`)
-- `agents()`와 `theme()`로 렌더링
-
-## 8. 개발 작업 흐름
-
-### 8.1 체크 명령어
 ```bash
-herdr-app check ~/.config/herdr-app/mods/<name>
+herdr-app check ~/.config/herdr-app/mods/openusage
+# Output: check passed: openusage
 ```
-수동으로 체크한 후 모드를 시험해보기.
 
-### 8.2 레이아웃/모드 복사 (클론)
+---
+
+## 💡 Herdr Mod Commands
+
+Control the mod directly from terminal or keybindings via `herdr-app do`:
+
 ```bash
-herdr-app do mod.clone '{"name":"files","as":"my-files"}'
-herdr-app do layout.clone '{"name":"main","as":"my-layout"}'
-```
-`.d.ts` 파일은 앱 시작 시 덮어씌우므로 절대 수정하지 말 것.
+# Toggle Agent Usage dashboard dialog
+herdr-app do mod.open '{"name":"openusage"}'
 
-## 9. 주의사항
+# Open Agent Usage in a dedicated tab
+herdr-app do tab.new '{"name":"Agent Usage","mod":"openusage"}'
 
-1. **모든 콜백은 독립적인 cx를 받음**: `cx`를 보관하지 말 것
-2. **setTimeout/Interval 대신 cx.timer 사용**
-3. **긴 작업은 exec 또는 cx.spawn 사용**
-4. **테마는 theme() 함수로 가져옴**: light/dark 모두 지원
-5. **상태는 shared() 사용**: 모든 모드가 읽을 수 있음
-6. **네트워크/파일 작업은 부담스럽게**: 폴더 변경 감지는 `watchFolder()` 사용
-
-## 10. 핵심 파일
-
-| 파일 | 설명 |
-|------|------|
-| `AGENTS.md` | 전체 문서 (여기서 참고) |
-| `herdr.d.ts` | herdr 모듈 API 타입 정의 |
-| `gpui-kit.d.ts` | GPUI 컴포넌트 타입 정의 |
-| `layouts/main.json` | 기본 레이아웃 구조 |
-| `mods/spaces/main.js` | 공간 사이드바 구현 |
-| `mods/agents/main.js` | 에이전트 리스트 구현 |
-| `mods/pane/main.js` | 팬 헤더 예시 |
-| `mods/toast/main.js` | 알림 토스트 구현 |
-## 11. 앱 명령어 (herdr-app commands)
-
-### 공간(Space) 관리
-| 명령 | 설명 |
-|------|------|
-| `space.new` | 새 공간 생성 (`{name, folder, tab, argv, task, machine}`) |
-| `space.close` | 공간 닫기 |
-| `space.rename` | 공간 이름 변경 |
-| `space.move` | 공간 이동 (`{id, index}`) |
-| `space.select` | 공간 선택 (`{index or id}`) |
-| `space.next` / `space.prev` | 공간 순환 |
-
-### 탭(Tab) 관리
-| 명령 | 설명 |
-|------|------|
-| `tab.new` | 새 탭 생성 (`{name, space, folder, argv, task, mod, props}`) |
-| `tab.close` | 탭 닫기 |
-| `tab.rename` | 탭 이름 변경 |
-| `tab.move` | 탭 이동 |
-| `tab.select` | 탭 선택 |
-| `tab.settle` / `tab.unsettle` | 탭 숨기기/보이기 |
-| `tab.next` / `tab.prev` | 탭 순환 |
-
-### 펜(Pane) 관리
-| 명령 | 설명 |
-|------|------|
-| `pane.split` | 펜 분할 (`{direction: "right"\|"down", pane, argv, mod, props}`) |
-| `pane.close` | 펜 닫기 |
-| `pane.zoom` | 펜 확대/축소 |
-| `pane.focus` | 펜 포커스 |
-| `pane.go` | 방향으로 포커스 이동 |
-| `pane.swap` | 인접 펜 교환 |
-
-### 터미널 관리
-| 명령 | 설명 |
-|------|------|
-| `terminal.open` | 터미널 열기 |
-| `terminal.kill` | 터미널 종료 |
-| `terminal.keep` / `terminal.park` | 터미널 유지 |
-| `terminal.peek` | 터미널 미리보기 |
-| `terminal.show` | 터미널 표시 |
-| `terminal.copy` / `terminal.paste` | 클립보드 |
-| `terminal.pin` | 에이전트 고정 |
-
-### 에이전트 관리
-| 명령 | 설명 |
-|------|------|
-| `agent.focus` | 에이전트 포커스 |
-| `agent.next` / `agent.prev` | 에이전트 순환 |
-
-### 레이아웃/모드
-| 명령 | 설명 |
-|------|------|
-| `layout.switch` | 레이아웃 전환 |
-| `layout.clone` | 레이아웃 복사 |
-| `mod.clone` | 모드 복사 |
-| `mod.open` | 모드 토글 |
-| `overlay.close` | 오버레이 닫기 |
-
-### 앱/윈도우
-| 명령 | 설명 |
-|------|------|
-| `app.settings` | 설정 열기 |
-| `app.palette` | 명령어 팔레트 |
-| `app.theme` | 테마 변경 |
-| `app.zoom_in/out/reset` | 확대/축소 |
-| `window.close/minimize/maximize` | 윈도우 제어 |
-
-## 12. 테스트 환경 (test/fake)
-
-모드 테스트를 위한 가짜 환경 (`/Users/jwseo/.config/herdr-app/mods/relevo/test/fake/`):
-
-```js
-// test/fake/herdr.mjs - 핵심 가짜 함수들
-export const agents = () => fake.agents;
-export const exec = async (cmd, args) => { fake.execs.push([...args].join(" ")); };
-export const run = (name, args) => { fake.runs.push([name, args]); };
-export const shared = (key) => fake.stored[key];
-export const setShared = (key, value) => { fake.stored[key] = value; };
+# Split active pane to the right with Agent Usage
+herdr-app do pane.split '{"direction":"right","mod":"openusage"}'
 ```
 
-테스트용 `fakeCx()` 함수로 컨텍스트 모킹:
-```js
-import { fakeCx, click, flush } from "./test/fake/ui.mjs";
+---
 
-export async function test_example() {
-  const cx = fakeCx();
-  const mod = new MyMod();
-  mod.init({}, cx);
-  await flush();
-  const el = mod.render(cx);
-  click(el.on_click_handlers, cx);
-}
-```
+## ⚙️ Configuration (`openusage-accounts.json`)
 
-## 13. 참고: 실제 샘플 코드
+Account profiles are stored in `~/.config/herdr-app/openusage-accounts.json`. You can edit this file manually or manage accounts through the in-app settings screen (`⚙ Settings / Accounts`).
 
-### 사이드바 모드 예시 (`mods/spaces/main.js`)
-- `spaces()`로 공간 목록 가져오기
-- `exec("git", ["branch", "--show-current"], { cwd, on })`로 원격 Git 상태 조회
-- `v_flex()`, `h_flex()`로 레이아웃 구성
-- `cx.spawn(async (cx) => ...)`로 비동기 작동
-
-### 상태표시줄에 모드 추가하기
-`layout.json`의 root 아래에 추가:
 ```json
 {
-  "id": "status",
-  "type": "block",
-  "content": { "mod": "herdr-quota" }
+  "accounts": [
+    {
+      "id": "claude-main",
+      "name": "Claude (Work)",
+      "provider": "claude",
+      "enabled": true,
+      "keychain_service": "Claude Code"
+    },
+    {
+      "id": "codex-main",
+      "name": "OpenAI Codex",
+      "provider": "codex",
+      "enabled": true,
+      "auth_path": "~/.codex/auth.json"
+    },
+    {
+      "id": "agy-main",
+      "name": "Google Antigravity",
+      "provider": "antigravity",
+      "enabled": true
+    },
+    {
+      "id": "opencode-main",
+      "name": "OpenCode Go",
+      "provider": "opencode",
+      "enabled": true
+    }
+  ],
+  "poll_interval_seconds": 180
 }
 ```
 
-## 14. 커스텀 모드: Agent Usage (`openusage`)
+---
 
-다양한 AI 코딩 에이전트(Claude Code, OpenAI Codex, Google Antigravity, OpenCode Go)의 실시간 쿼터·사용량·리셋 타이머를 한눈에 볼 수 있는 Herdr 전용 에이전트 사용량(Agent Usage) 모니터 모드입니다.
+## 📂 Repository Structure
 
-### 14.1 주요 기능
-- **4대 AI 프로바이더 쿼터 통합 모니터링**:
-  - **Claude Code**: Keychain OAuth 토큰 기반 5시간 세션 및 7일 주간 한도/리셋 시각 조회
-  - **OpenAI Codex**: `~/.codex/auth.json` ChatGPT 토큰 기반 5시간 세션 및 7일 주간 한도/플랜(Plus/Pro) 조회
-  - **Google Antigravity**: `agy -p /usage` 연동 (Gemini Models 및 Claude/GPT models 서브 버킷 쿼터 분리 표시)
-  - **OpenCode Go**: `opencode api` 기반 Rolling, Weekly, Monthly 한도 조회
-- **Herdr 실행 중인 에이전트 실시간 연동**:
-  - `agents()` API를 통해 현재 활성화된 에이전트(예: Antigravity t5 working)를 프로바이더 카드에 표시하고 클릭 한 번으로 포커스 이동 (`Focus →`)
-- **다중 계정(Multi-Account) 지원**:
-  - 서비스별 단일 계정 제한 없이 여러 프로필/계정을 등록하여 동시에 모니터링 가능 (예: `Claude (Work)`, `Claude (Personal)`, `Codex (Team)`, `Antigravity (Profile 2)` 등)
-  - 계정별 인증 소스(Keychain Service 명칭, 커스텀 `auth.json` 경로, CLI 등)를 독립적으로 지정
-- **왼쪽 사이드바(Sidebar) 너비 반응형(Responsive) 레이아웃**:
-  - Herdr의 기본 `main` 레이아웃 왼쪽 사이드바(`sidebar-lists`)의 `usages` 블록에서 사이드바 가로 폭(`sidebar.size.px`)에 맞춰 4단계 반응형 레이아웃 자동 전환:
-    - **레일 모드 (Rail, < 140px)**: 좁은 폭(44px~76px)에서 시간 주기에 맞춘 **페이스마크 지원 순수 원형 듀얼 아크 위젯(Paced Dual-Arc Widget)**으로 직관적 시각화:
-      - **48x48 정사각 아이콘 버튼**: 상하 텍스트/숫자를 완전히 생략하여 사이드바 상단 탭/공간 아이콘들과 완벽한 세로 격자 정렬 및 미니멀리즘 구현.
-      - **상단 연속 아크(Continuous Arch `⌒`)**: 5시간(5h, 짧은 시간)을 상징하는 80°(230°~310°) 매끄러운 단일 연속 아크 게이지. 시계 방향으로 잔여 쿼터 표시.
-      - **하단 7일(7d) 긴 크래들 아크(Long Cradle `∪`)**: 긴 주간(7d)을 상징하는 210°(195°~345°) 대형 크래들 아크. 시계 방향으로 잔여 쿼터 표시. 좌우 여백은 35°씩 완벽한 대칭 형성.
-      - **슬림 페이스마크 (Pace Mark 가이드라인 틱)**: 상하 아크 트랙 위에 시간 경과에 따른 소모 예상 기준점(Pacing Guide)을 직교하는 단정한 9px 흰색 틱 라인으로 표시하여 소비 진도를 한눈에 파악.
-      - **시그니처 파란색 컬러 체계**: 기존 녹색 대신 생동감 있는 파란색(🔵 `#3b82f6`)을 기본으로 채택하고, 주의(🟡 `#f59e0b`), 위험/소진(🔴 `#ef4444`), 비활성(⚪ `dim`) 4단계 상태 구분.
-      - **중앙 로고 밀착 (Snug Ring Fit)**: 게이지 반경을 R=42로 좁히고 로고를 18px로 확대하여, 불필요한 여백 없이 로고를 아늑하게 감싸는 일체형 비주얼 완성.
-      - **호버 툴팁(Tooltip)**: 마우스 호버 시 5시간·주간 상세 잔여 % 수치, 페이스 가이드 기준치 및 리셋 카운트다운 타이머 제공, 클릭 시 대시보드 팝업.
-    - **슬림 모드 (Narrow, 140px ~ 230px)**: 축약 라벨(`5h`, `7d`, `24h`)과 컴팩트 게이지 바를 상하 2줄로 배치하여 가로 잘림 없이 표시
-    - **표준 모드 (Standard, 230px ~ 320px, 기본값 268px)**: `5시간`, `주간` 표준 라벨과 5px 잔여량 바, 선형 페이스 기준선(`|`), 리셋 카운트다운 타이머를 상하 2줄로 정렬
-    - **와이드 모드 (Wide, >= 320px)**: 사이드바를 넓혔을 때 공간을 극대화하여 **`5시간`과 `주간` 게이지를 한 줄에 나란히 좌우 2열 컬럼(Dual Columns)**으로 동시 배치 (세로 공간 50% 절약)
-- **OpenAI ChatGPT 공식 아이콘 적용**:
-  - `https://lobehub.com/icons` 기준 공식 OpenAI ChatGPT 기하학적 심볼(꽃/매듭 로고) 벡터를 채택하여 `openusage/icons/codex.svg` 및 시스템 전역 아이콘 디렉토리에 완벽 반영
-- **Open 시 자동 새로고침 비활성화 및 수동 강제 갱신 구조**:
-  - `shared("openusage.accounts_cache")`를 통해 사이드바, 탭, 오버레이 팝업 인스턴스 간 쿼터 데이터를 실시간 공유
-  - 사이드바에서 `Open`을 누르거나 대시보드 창을 열 때 **자동으로 백엔드 API/CLI 재호출을 하지 않고**, 기존에 폴링·캐시된 데이터를 딜레이 없이 즉시 화면에 렌더링
-  - 백그라운드 주기적 폴링(2~5분)이 조용히 최신 상태를 유지하며, 사용자가 즉시 최신 데이터를 받아보고 싶을 때만 상단 `Refresh ↻` 버튼을 눌러 수동 강제 갱신(Force Refresh) 수행
-- **설정 및 계정 관리 화면 (`⚙ Settings / Accounts`)**:
-  - 대시보드 상단 ⚙️ 버튼을 통해 GUI 상에서 등록된 계정 활성화/비활성화 토글, 삭제 및 프리셋 계정 추가 가능
-  - 영구 설정 파일: `~/.config/herdr-app/openusage-accounts.json`을 통해 텍스트 에디터로 직접 계정 목록 및 옵션 편집 가능
-- **글랜서블(Glanceable) 대시보드 UI**:
-  - **잔여량(Remaining) 중심 게이지**: 사용량이 아닌 잔여 쿼터(`% remaining`)를 기준으로 게이지 바가 차오르며, 소진될수록 줄어드는 직관적 시각화
-  - **페이스 가이드(Pacing Guide)**:
-    - 각 윈도우 기간(5시간, 7일, 30일 등) 동안 일정하게 소비했을 때 시점별 예상 잔여 기준선(`|`)을 게이지 트랙 위에 마커로 표시
-    - **가이드 초과 여부 기반 색상 및 상태 판정**:
-      - 🟢 **Ahead (여유)**: 잔여량이 가이드선보다 많음 (`~X% left at reset`, 소비 속도가 안정적)
-      - 🟡 **On Track (적정)**: 가이드선 부근 (`~X% used at reset`, 90~100% 예상)
-      - 🔴 **Burning Fast (조기 소진 위험)**: 소비 속도가 빨라 잔여량이 가이드선에 미달 (`~X% over limit at reset`, 리셋 전 조기 소진 위험)
-  - 상단 요약 바: 전체 페이스 요약(Overall Pacing), 활성 에이전트 수, 가장 빠른 리셋 타이머 카운트다운
-  - 개별 및 전체 새로고침(Spin 애니메이션) 및 비동기 캐싱 지원
-
-### 14.2 파일 구조
 ```
-openusage/
-├── mod.json          # 모드 설정 (다이얼로그 크기 및 타이틀 정의)
-├── main.js           # GPUI 컴포넌트 뷰 (사이드바 4단계 반응형 / 대시보드 / 설정 화면)
-├── cache/            # 레일 뷰용 Status-Trio / iPhone Duo 원형 듀얼 아크 PNG 게이지 (0%~100%)
-│   ├── upper-0.png ~ upper-100.png   # 상단 5h/24h 배터리 아크 레이어
-│   └── lower-0.png ~ lower-100.png   # 하단 7d 주간 스마일 아크 레이어
-├── helpers/          # 프로바이더별 CLI/API 데이터 수집기 및 위젯 생성기
-│   ├── accounts.py   # 다중 계정 설정(~/.config/herdr-app/openusage-accounts.json) CRUD
-│   ├── duo_svg.py    # iPhone Duo / Status-Trio 스타일 원형 듀얼 아크 SVG/PNG 생성기
-│   ├── antigravity.py
-│   ├── claude.py     # 커스텀 Keychain Service 명칭 지원
-│   ├── codex.py      # 커스텀 auth.json 경로 지원
-│   └── opencode.py
-└── icons/            # SVG 아이콘
-    ├── openusage.svg
-    ├── refresh.svg
-    ├── openai.svg    # LobeHub 공식 OpenAI ChatGPT 심볼 (@lobehub/icons Mono)
-    ├── codex.svg     # LobeHub 공식 OpenAI ChatGPT 심볼
-    ├── claude.svg
-    ├── antigravity.svg
-    └── opencode.svg
+herdr-mods/
+├── README.md                      # Project documentation (English)
+├── CHANGELOG.md                   # Version history & release notes
+├── docs/
+│   ├── herdr-mod-guide.md         # Herdr Mod Development & API Reference (Korean)
+│   └── screenshots/               # Interface validation screenshots
+│       ├── openusage-rail-v1.5.1-snug.png
+│       ├── openusage-standard-v1.3.0.png
+│       └── openusage-overlay-v1.2.0.png
+└── openusage/                     # Agent Usage mod source
+    ├── mod.json                   # Mod declaration & dialog configuration
+    ├── main.js                    # GPUI view component (Sidebar, Dashboard, Settings)
+    ├── cache/                     # Pre-rendered high-DPI arc & tick assets (0%–100%)
+    ├── helpers/                   # Python scrapers & SVG/PNG geometry engines
+    │   ├── accounts.py            # Account CRUD manager
+    │   ├── duo_svg.py             # Dual-arc geometry & tick rasterizer
+    │   ├── claude.py              # macOS Keychain token reader
+    │   ├── codex.py               # Session auth parser
+    │   ├── antigravity.py         # agy CLI integration
+    │   └── opencode.py            # opencode API integration
+    └── icons/                     # Provider & UI vector assets (SVG)
 ```
 
-### 14.3 실행 및 배치 방법
-- **왼쪽 사이드바(Spaces/Agents 아래) 배치**:
-  `~/.config/herdr-app/layouts/main.json`의 `sidebar-lists`에 자동 추가되어 실시간 연동됩니다.
-- **다이얼로그 오버레이로 열기**:
-  ```bash
-  herdr-app do mod.open '{"name":"openusage"}'
-  ```
-- **새 탭으로 열기**:
-  ```bash
-  herdr-app do tab.new '{"name":"Agent Usage","mod":"openusage"}'
-  ```
-- **현재 펜 분할하여 나란히 열기**:
-  ```bash
-  herdr-app do pane.split '{"direction":"right","mod":"openusage"}'
-  ```
-- **모드 검증 (GPUI 테스트)**:
-  ```bash
-  herdr-app check ~/.config/herdr-app/mods/openusage
-  ```
+---
 
-### 14.4 버전 기록 및 검증 스크린샷 (v1.5.1)
+## 🛠️ Developing Herdr Mods
 
-상세 변경 이력은 [CHANGELOG.md](file:///Users/jwseo/Project/herdr-mods/CHANGELOG.md)를 참고하십시오.
+Want to build your own custom mods for Herdr?
+Consult the comprehensive [Herdr Mod Development Guide (Korean)](docs/herdr-mod-guide.md) for detailed documentation on:
+- Herdr Architecture & Process Isolation (`herdr-core` vs `herdr-app`)
+- Live Data & Act API reference (`spaces()`, `agents()`, `exec()`, `shared()`)
+- GPUI styling chain methods & responsive layouts
+- Mod testing and validation workflows
 
-| 뷰 모드 | 설명 | 스크린샷 |
-| :--- | :--- | :--- |
-| **초슬림 레일 모드 (Rail View, 68px, v1.5.1)** | 원형 듀얼 아크(상단 5h/하단 7d), 페이스마크 틱(Pace Mark), 생동감 있는 파란색(🔵) 및 Snug Fit 로고 | [openusage-rail-v1.5.1-snug.png](file:///Users/jwseo/Project/herdr-mods/docs/screenshots/openusage-rail-v1.5.1-snug.png) |
-| **표준 사이드바 모드 (Standard View, 268px)** | 계정별 5시간/주간 프로그레스 바, 잔여 %, 리셋 카운트다운, 7d 소진 시 5h 0% 회색 처리 및 공식 OpenAI 로고 | [openusage-standard-v1.3.0.png](file:///Users/jwseo/Project/herdr-mods/docs/screenshots/openusage-standard-v1.3.0.png) |
-| **대시보드 모달 오버레이 (Dashboard Overlay)** | `mod.open '{"name":"openusage"}'` 전체 화면 대시보드, Pacing 가이드 및 카드별 상세 쿼터 분석 | [openusage-overlay-v1.2.0.png](file:///Users/jwseo/Project/herdr-mods/docs/screenshots/openusage-overlay-v1.2.0.png) |
+---
 
+## 📜 Release History
 
+See [CHANGELOG.md](CHANGELOG.md) for full details on releases, features, and fixes.
+- **v1.5.1 (Current)**: Compact dial ticks (9.0px), snug-fit ring geometry (`R=42`), 18px vector logos.
+- **v1.5.0**: Calibrated pacing tick guidelines on arc tracks, vibrant blue (`#3b82f6`) palette transition.
+- **v1.4.0**: Pure dual-arc icon complication without text clutter.
+- **v1.3.0**: Inverted top-5h arch / bottom-7d cradle orientation and 7d-dependent greying.
+- **v1.2.0**: Official OpenAI ChatGPT knot vector logo integration.
+- **v1.1.0**: 4-tier responsive sidebar layout & multi-account configuration UI.
+- **v1.0.0**: Initial Agent Usage release with 4 AI providers.
 
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).
+Herdr and third-party trademarks are the properties of their respective owners.
