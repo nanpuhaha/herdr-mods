@@ -4,7 +4,7 @@
 
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-brightgreen.svg)](#)
 [![Herdr Compatibility](https://img.shields.io/badge/herdr--app-compatible-blue.svg)](#)
-[![Version](https://img.shields.io/badge/release-v1.5.1-purple.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/release-v1.5.2-purple.svg)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **Herdr Mods** is a curated collection of desktop extensions and workflow modules built with [GPUI](https://github.com/zed-industries/zed/tree/main/crates/gpui) for the **Herdr** coding agent workspace. 

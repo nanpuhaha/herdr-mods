@@ -840,7 +840,7 @@ export default class AgentUsage extends View {
             .hover((s) => s.bg(t.hover))
             .tooltip("Agent Usage (Click to open)")
             .on_click(() => run("mod.open", { name: "agent-usage" }))
-            .child(svg("mods/agent-usage/icons/agent-usage.svg").size(16).text_color(t.accent))
+            .child(svg("mods/agent-usage/icons/agent-usage.svg").size(14).text_color(t.accent))
         )
         .child(
           v_flex()
@@ -1126,7 +1126,7 @@ export default class AgentUsage extends View {
                 .flex()
                 .items_center()
                 .justify_center()
-                .child(svg(provMeta.icon).size(18).text_color(is7dExhausted ? t.dim : t.foreground))
+                .child(svg(provMeta.icon).size(14).text_color(is7dExhausted ? t.dim : t.foreground))
             )
         );
   }
