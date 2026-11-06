@@ -19,7 +19,10 @@ CACHE_MAX_AGE = 7 * 24 * 3600
 
 def auth_path(custom_path=None):
     if custom_path:
-        return os.path.expanduser(custom_path)
+        expanded = os.path.expanduser(custom_path)
+        if "\0" in expanded:
+            raise ValueError("Null bytes in auth path")
+        return os.path.abspath(expanded)
     root = os.environ.get("CODEX_HOME") or os.path.join(os.path.expanduser("~"), ".codex")
     return os.path.join(root, "auth.json")
 
@@ -44,7 +47,10 @@ def read_cache(custom_path=None):
 
 def write_cache(summary, fetched_at, custom_path=None):
     try:
-        with open(get_cache_path(custom_path), "w", encoding="utf-8") as handle:
+        path = get_cache_path(custom_path)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        fd = os.open(path, flags, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump({"fetched_at": fetched_at, **summary}, handle)
     except Exception:
         pass

@@ -31,9 +31,11 @@ def read_cache():
 
 
 def write_cache(summary, fetched_at):
-    """Persist the last successful summary without making the meter fail."""
+    """Persist the last successful summary with restrictive permissions (0600)."""
     try:
-        with open(CACHE_PATH, "w", encoding="utf-8") as handle:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        fd = os.open(CACHE_PATH, flags, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump({"fetched_at": fetched_at, **summary}, handle)
     except Exception:
         pass

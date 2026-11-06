@@ -8,15 +8,6 @@ import sys
 PRIMARY_CONFIG_PATH = os.path.expanduser("~/.config/herdr-app/agent-usage-accounts.json")
 LEGACY_CONFIG_PATH = os.path.expanduser("~/.config/herdr-app/openusage-accounts.json")
 
-def get_config_path():
-    if os.path.exists(PRIMARY_CONFIG_PATH):
-        return PRIMARY_CONFIG_PATH
-    if os.path.exists(LEGACY_CONFIG_PATH):
-        return LEGACY_CONFIG_PATH
-    return PRIMARY_CONFIG_PATH
-
-CONFIG_PATH = get_config_path()
-
 DEFAULT_CONFIG = {
     "accounts": [
         {
@@ -63,20 +54,47 @@ DEFAULT_CONFIG = {
 
 
 def load_config():
-    if not os.path.exists(CONFIG_PATH):
-        save_config(DEFAULT_CONFIG)
-        return DEFAULT_CONFIG
-    try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return DEFAULT_CONFIG
+    if os.path.exists(PRIMARY_CONFIG_PATH):
+        try:
+            with open(PRIMARY_CONFIG_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return DEFAULT_CONFIG
+
+    if os.path.exists(LEGACY_CONFIG_PATH):
+        try:
+            with open(LEGACY_CONFIG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            save_config(data)
+            return data
+        except Exception:
+            pass
+
+    save_config(DEFAULT_CONFIG)
+    return DEFAULT_CONFIG
 
 
 def save_config(config):
-    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=2, ensure_ascii=False)
+    target_path = PRIMARY_CONFIG_PATH
+    dir_name = os.path.dirname(target_path)
+    os.makedirs(dir_name, mode=0o700, exist_ok=True)
+    temp_path = f"{target_path}.tmp.{os.getpid()}"
+    try:
+        # Write to temporary file with restrictive permissions (0600)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        mode = 0o600
+        fd = os.open(temp_path, flags, mode)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=2, ensure_ascii=False)
+        # Atomically replace destination
+        os.replace(temp_path, target_path)
+    except Exception:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+        raise
 
 
 def main():
@@ -95,9 +113,17 @@ def main():
             return
         try:
             account = json.loads(sys.argv[2])
+            if not isinstance(account, dict):
+                raise ValueError("Account must be a JSON object")
+            provider = str(account.get("provider", "")).strip().lower()
+            if not provider or not provider.replace("-", "").isalnum():
+                raise ValueError("Invalid provider specified")
             if not account.get("id"):
                 import time
-                account["id"] = f"{account.get('provider', 'custom')}-{int(time.time())}"
+                account["id"] = f"{provider}-{int(time.time())}"
+            # Check for null bytes or invalid paths
+            if "authPath" in account and "\0" in str(account["authPath"]):
+                raise ValueError("Null bytes in authPath")
             # Check if exists
             exists = False
             for i, a in enumerate(config["accounts"]):

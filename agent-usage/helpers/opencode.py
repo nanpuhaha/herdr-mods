@@ -25,7 +25,9 @@ def read_cache():
 
 def write_cache(data):
     try:
-        with open(CACHE_PATH, "w", encoding="utf-8") as f:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        fd = os.open(CACHE_PATH, flags, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f)
     except Exception:
         pass

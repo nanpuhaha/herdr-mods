@@ -43,7 +43,6 @@ def access_token(service_name=DEFAULT_KEYCHAIN_SERVICE):
     if not token:
         raise RuntimeError(f"Claude Keychain item ({service_name}) has no access token")
     return token
-    return token
 
 
 def fetch_usage(token):
@@ -88,10 +87,12 @@ def read_cache(service_name):
 
 
 def write_cache(summary, fetched_at, service_name):
-    """Persist the last successful summary without making the meter fail."""
+    """Persist the last successful summary with restrictive permissions (0600)."""
     try:
         path = get_cache_path(service_name)
-        with open(path, "w", encoding="utf-8") as handle:
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+        fd = os.open(path, flags, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump({"fetched_at": fetched_at, **summary}, handle)
     except Exception:
         pass

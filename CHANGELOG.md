@@ -4,6 +4,30 @@
 
 ---
 
+## [v1.5.3] - 2026-11-06
+
+보안 강화(Security Hardening): 원자적 쓰기(Atomic Write) & 최소 권한(0600) 적용, 입력 검증, 레거시 스크린샷 7종 정리 및 .gitignore 강화.
+
+### 🌟 주요 변경 사항 (Highlights)
+
+1. **원자적 파일 쓰기(Atomic Write) 및 최소 권한(`0600`) 강제**
+   - `accounts.py`: 계정 설정 파일(`~/.config/herdr-app/agent-usage-accounts.json`) 저장 시 임시 파일 생성 후 원자적 교체(`os.replace`) 적용으로 파일 손상 방지.
+   - 설정 파일 및 모든 캐시 파일(`claude.py`, `codex.py`, `antigravity.py`, `opencode.py`)에 대해 소유자 전용 읽기/쓰기(`0600`, `-rw-------`) 권한을 강제하여 로컬 프라이버시 보호.
+   - 레거시 설정(`openusage-accounts.json`)을 새 경로로 자동 마이그레이션.
+
+2. **입력 유효성 검사 및 안전한 경로 처리 (Input Validation & Safe Path)**
+   - `accounts.py`: 계정 추가 시 JSON 객체 및 프로바이더 이름 스키마 검증.
+   - `codex.py`: `custom_path` 파라미터에 대한 널 바이트(`\0`) 및 절대 경로 정규화(`os.path.abspath`) 검증 적용.
+   - `claude.py`: 중복 코드(`return token` 2회 연속 호출) 제거.
+
+3. **프라이버시 보호를 위한 구버전 전체화면 스크린샷 7종 정리**
+   - 최신 모드 UI만 타이트하게 크롭된 대표 스크린샷 3종만 보존하고, 구버전 2880x1806 스크린샷 7종을 저장소에서 완전히 제거하여 저장소 용량 최적화 및 PII 노출 원천 차단.
+
+4. **.gitignore 방어 규칙 대폭 강화 (Defense-in-Depth)**
+   - 민감 설정 파일(`*accounts.json`, `*credentials.json`, `auth.json`, `.env*`, `*.pem`, `*.key`), 임시 파일(`*.tmp`, `*.bak`, `*.swp`), OS 및 IDE 아티팩트에 대한 무시 규칙 전면 보강.
+
+---
+
 ## [v1.5.2] - 2026-11-06
 
 레일 뷰(가장 좁은 사이드바) 중앙 프로바이더 앱 아이콘 및 상단 헤더 아이콘 크기 최적화 (18px -> 14px): 원형 게이지와의 여백 밸런스 개선.
@@ -59,7 +83,7 @@
    - 마우스 호버 시 표시되는 툴팁에 `(가이드: XX%)` 안내를 추가하여 정밀한 시간별 소비 진도 확인 가능.
 
 4. **실물 스크린샷 갱신 및 검증 완료**
-   - 레일 모드(`docs/screenshots/agent-usage-rail-v1.5.0-pace-marks.png`) 실물 캡처 및 정상 작동 검증 완료.
+   - 레일 모드 실물 캡처 및 정상 작동 검증 완료.
 
 ---
 
@@ -79,7 +103,7 @@
    - 위젯 자체는 군더더기 없는 순수 그래픽으로 유지하면서, 마우스 호버 시 5시간 및 7일 주간 잔여 % 수치(`• 5h 잔여: 79%`, `• 7d 잔여: 51%`)와 리셋 카운트다운을 풍부하게 표시.
 
 3. **실물 스크린샷 갱신 및 검증 완료**
-   - 레일 모드(`docs/screenshots/agent-usage-rail-v1.4.0-pure-gauge.png`) 실물 캡처 및 정상 작동 검증 완료.
+   - 레일 모드 실물 캡처 및 정상 작동 검증 완료.
 
 ---
 
@@ -95,7 +119,7 @@
    - 마우스 호버 시 표시되는 툴팁(`tip`)에는 기존대로 상세 설명 및 단위(`잔여: 79%`)가 그대로 유지되어 정보 손실 없음.
 
 2. **실물 스크린샷 갱신 및 검증 완료**
-   - 레일 모드(`docs/screenshots/agent-usage-rail-v1.3.2.png`) 실물 캡처 및 정상 렌더링 확인 완료.
+   - 레일 모드 실물 캡처 및 정상 렌더링 확인 완료.
 
 ---
 
@@ -118,7 +142,7 @@
    - 0%~100% 상단/하단 게이지 308개 SVG 및 PNG 리소스 전면 재생성.
 
 4. **실물 스크린샷 갱신 및 검증 완료**
-   - 레일 모드(`docs/screenshots/agent-usage-rail-v1.3.1.png`) 실물 캡처 완료.
+   - 레일 모드 실물 캡처 완료.
 
 ---
 
@@ -135,7 +159,7 @@
    - 0%~100% 상단/하단/통합 게이지 총 308개 SVG 및 PNG 캐시 리소스 전면 재생성.
 
 2. **검증 스크린샷 갱신**
-   - 반전된 원형 듀얼 게이지 레일 모드(`docs/screenshots/agent-usage-rail-v1.3.0.png`) 및 표준 사이드바 모드(`docs/screenshots/agent-usage-standard-v1.3.0.png`) 실물 캡처 및 검증 완료.
+   - 반전된 원형 듀얼 게이지 레일 모드 및 표준 사이드바 모드 실물 캡처 및 검증 완료.
 
 ---
 
@@ -172,8 +196,8 @@ Status-Trio 및 iPhone Duo 스타일 원형 듀얼 아크 게이지 레일 뷰 �
 
 | 모드 | 스크린샷 |
 | :--- | :--- |
-| **표준 사이드바 (Standard View, 268px)** | ![Standard View](docs/screenshots/agent-usage-standard-v1.2.0.png) |
-| **레일 모드 (Rail View, 68px)** | ![Rail View](docs/screenshots/agent-usage-rail-v1.2.0.png) |
+| **표준 사이드바 (Standard View, 268px)** | ![Standard View](docs/screenshots/agent-usage-standard-v1.3.0.png) |
+| **레일 모드 (Rail View, 68px)** | ![Rail View](docs/screenshots/agent-usage-rail-v1.5.1-snug.png) |
 | **대시보드 오버레이 (Dashboard Overlay)** | ![Overlay View](docs/screenshots/agent-usage-overlay-v1.2.0.png) |
 
 ---
