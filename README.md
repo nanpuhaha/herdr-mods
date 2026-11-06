@@ -344,9 +344,9 @@ export async function test_example() {
 }
 ```
 
-## 14. 신규 커스텀 모드: OpenUsage (`openusage`)
+## 14. 커스텀 모드: Agent Usage (`openusage`)
 
-[OpenUsage](https://github.com/robinebers/openusage) 스타일로 다양한 AI 코딩 에이전트(Claude Code, OpenAI Codex, Google Antigravity, OpenCode Go)의 실시간 쿼터·사용량·리셋 타이머를 한눈에 볼 수 있는 커스텀 Herdr 모드입니다.
+다양한 AI 코딩 에이전트(Claude Code, OpenAI Codex, Google Antigravity, OpenCode Go)의 실시간 쿼터·사용량·리셋 타이머를 한눈에 볼 수 있는 Herdr 전용 에이전트 사용량(Agent Usage) 모니터 모드입니다.
 
 ### 14.1 주요 기능
 - **4대 AI 프로바이더 쿼터 통합 모니터링**:
@@ -383,7 +383,7 @@ export async function test_example() {
   - 영구 설정 파일: `~/.config/herdr-app/openusage-accounts.json`을 통해 텍스트 에디터로 직접 계정 목록 및 옵션 편집 가능
 - **글랜서블(Glanceable) 대시보드 UI**:
   - **잔여량(Remaining) 중심 게이지**: 사용량이 아닌 잔여 쿼터(`% remaining`)를 기준으로 게이지 바가 차오르며, 소진될수록 줄어드는 직관적 시각화
-  - **OpenUsage 페이스 가이드(Pacing Guide)**:
+  - **페이스 가이드(Pacing Guide)**:
     - 각 윈도우 기간(5시간, 7일, 30일 등) 동안 일정하게 소비했을 때 시점별 예상 잔여 기준선(`|`)을 게이지 트랙 위에 마커로 표시
     - **가이드 초과 여부 기반 색상 및 상태 판정**:
       - 🟢 **Ahead (여유)**: 잔여량이 가이드선보다 많음 (`~X% left at reset`, 소비 속도가 안정적)
@@ -426,7 +426,7 @@ openusage/
   ```
 - **새 탭으로 열기**:
   ```bash
-  herdr-app do tab.new '{"name":"OpenUsage","mod":"openusage"}'
+  herdr-app do tab.new '{"name":"Agent Usage","mod":"openusage"}'
   ```
 - **현재 펜 분할하여 나란히 열기**:
   ```bash
@@ -437,14 +437,14 @@ openusage/
   herdr-app check ~/.config/herdr-app/mods/openusage
   ```
 
-### 14.4 버전 기록 및 검증 스크린샷 (v1.3.0)
+### 14.4 버전 기록 및 검증 스크린샷 (v1.5.1)
 
 상세 변경 이력은 [CHANGELOG.md](file:///Users/jwseo/Project/herdr-mods/CHANGELOG.md)를 참고하십시오.
 
 | 뷰 모드 | 설명 | 스크린샷 |
 | :--- | :--- | :--- |
+| **초슬림 레일 모드 (Rail View, 68px, v1.5.1)** | 원형 듀얼 아크(상단 5h/하단 7d), 페이스마크 틱(Pace Mark), 생동감 있는 파란색(🔵) 및 Snug Fit 로고 | [openusage-rail-v1.5.1-snug.png](file:///Users/jwseo/Project/herdr-mods/docs/screenshots/openusage-rail-v1.5.1-snug.png) |
 | **표준 사이드바 모드 (Standard View, 268px)** | 계정별 5시간/주간 프로그레스 바, 잔여 %, 리셋 카운트다운, 7d 소진 시 5h 0% 회색 처리 및 공식 OpenAI 로고 | [openusage-standard-v1.3.0.png](file:///Users/jwseo/Project/herdr-mods/docs/screenshots/openusage-standard-v1.3.0.png) |
-| **초슬림 레일 모드 (Rail View, 68px, v1.3.0)** | 상단 5h/24h 짧은 윙 아크(Short Arc) + 하단 7d 긴 대형 크래들 아크(Long Cradle, 210°) 및 중앙 공식 로고 | [openusage-rail-v1.3.0.png](file:///Users/jwseo/Project/herdr-mods/docs/screenshots/openusage-rail-v1.3.0.png) |
 | **대시보드 모달 오버레이 (Dashboard Overlay)** | `mod.open '{"name":"openusage"}'` 전체 화면 대시보드, Pacing 가이드 및 카드별 상세 쿼터 분석 | [openusage-overlay-v1.2.0.png](file:///Users/jwseo/Project/herdr-mods/docs/screenshots/openusage-overlay-v1.2.0.png) |
 
 

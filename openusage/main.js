@@ -476,7 +476,7 @@ export default class OpenUsage extends View {
   }
 
   /**
-   * Renders the Remaining Gauge with OpenUsage Pace Guide Line (Full Dashboard view)
+   * Renders the Remaining Gauge with Pace Guide Line (Full Dashboard view)
    */
   renderPacedMetricRow(t, label, windowData, periodSeconds) {
     if (!windowData) return null;
@@ -836,7 +836,7 @@ export default class OpenUsage extends View {
             .rounded(4)
             .cursor_pointer()
             .hover((s) => s.bg(t.hover))
-            .tooltip("OpenUsage · Usages (Click to open)")
+            .tooltip("Agent Usage (Click to open)")
             .on_click(() => run("mod.open", { name: "openusage" }))
             .child(svg("mods/openusage/icons/openusage.svg").size(16).text_color(t.accent))
         )
@@ -1435,7 +1435,7 @@ export default class OpenUsage extends View {
                   })
                   .child("← Back to Dashboard")
               )
-              .child(div().font_bold().text_size(15).child("OpenUsage Settings & Accounts"))
+              .child(div().font_bold().text_size(15).child("Agent Usage Settings & Accounts"))
           )
           .child(
             div()
@@ -1684,7 +1684,7 @@ export default class OpenUsage extends View {
                     h_flex()
                       .gap(6)
                       .items_center()
-                      .child(div().font_bold().text_size(15).child("OpenUsage"))
+                      .child(div().font_bold().text_size(15).child("Agent Usage"))
                       .child(
                         div()
                           .px(5)
