@@ -361,13 +361,13 @@ export async function test_example() {
   - 계정별 인증 소스(Keychain Service 명칭, 커스텀 `auth.json` 경로, CLI 등)를 독립적으로 지정
 - **왼쪽 사이드바(Sidebar) 너비 반응형(Responsive) 레이아웃**:
   - Herdr의 기본 `main` 레이아웃 왼쪽 사이드바(`sidebar-lists`)의 `usages` 블록에서 사이드바 가로 폭(`sidebar.size.px`)에 맞춰 4단계 반응형 레이아웃 자동 전환:
-    - **레일 모드 (Rail, < 140px)**: 좁은 폭(44px~76px)에서 **iPhone Duo 스타일 원형 위젯(Circular Dual-Arc Widget)**으로 혁신적 시각화:
-      - **상단 숫자**: 5시간 쿼터 잔여 퍼센트 숫자(예: `50`, `16`)를 굵은 폰트로 선명하게 표시
-      - **중앙 로고**: 프로바이더 공식 벡터 아이콘 (LobeHub 공식 OpenAI ChatGPT 로고, Claude, Antigravity, OpenCode) 배치
-      - **좌측 호 (Left Arc)**: 5시간 잔여량 게이지 (소진율과 권장 페이스에 따라 🟢녹색/🟡주황/🔴빨강 매끄러운 곡선 차오름)
-      - **우측 호 (Right Arc)**: 주간 잔여량 게이지 (7일 잔여 쿼터에 따라 🔵시안/🟡주황/🔴빨강 대칭 곡선 차오름)
-      - **하단 도트 4개 (Pace Dots)**: iPhone Duo 스타일의 4개 점(`••••`)을 통해 소비 페이스(여유/적정/조기소진 위험) 상태를 직관적으로 점등
-      - 마우스 호버 시 5시간·주간 상세 잔여량 및 타이머 툴팁 제공, 클릭 시 대시보드 팝업
+    - **레일 모드 (Rail, < 140px)**: 좁은 폭(44px~76px)에서 시간 주기에 맞춘 **원형 듀얼 아크 위젯(Circular Dual-Arc Widget)**으로 직관적 시각화:
+      - **상단 5시간(OpenCode 24h) 짧은 윙 아크(Short Arc)**: 짧은 시간 스케일에 맞춰 상단 % 숫자를 좌우에서 감싸는 컴팩트 아크(총 60° 윙). 잔여량에 따라 🟢녹색/🟡주황/🔴빨강으로 차오름.
+      - **상단 중앙 숫자**: 5시간 쿼터 잔여 퍼센트 숫자(예: `46%`, `87%`)를 게이지 색상과 일치시켜 선명하게 표시.
+      - **중앙 로고**: 프로바이더 공식 벡터 아이콘 (LobeHub 공식 OpenAI ChatGPT 로고, Claude Sparkle, Antigravity 'A', OpenCode) 배치.
+      - **하단 7일(7d) 긴 크래들 아크(Long Cradle)**: 긴 시간 스케일에 맞춰 9:30 방향에서 6시를 거쳐 2:30 방향까지 하단 및 측면을 웅장하게 감싸는 210° 대형 크래들 아크. 시계 방향으로 잔여 쿼터 표시.
+      - **하단 중앙 숫자**: 7일 주간 잔여 퍼센트 숫자(예: `29%`, `52%`)를 하단에 크고 굵게 표시.
+      - 마우스 호버 시 5시간·주간 상세 잔여량 및 타이머 툴팁 제공, 클릭 시 대시보드 팝업.
     - **슬림 모드 (Narrow, 140px ~ 230px)**: 축약 라벨(`5h`, `7d`, `24h`)과 컴팩트 게이지 바를 상하 2줄로 배치하여 가로 잘림 없이 표시
     - **표준 모드 (Standard, 230px ~ 320px, 기본값 268px)**: `5시간`, `주간` 표준 라벨과 5px 잔여량 바, 선형 페이스 기준선(`|`), 리셋 카운트다운 타이머를 상하 2줄로 정렬
     - **와이드 모드 (Wide, >= 320px)**: 사이드바를 넓혔을 때 공간을 극대화하여 **`5시간`과 `주간` 게이지를 한 줄에 나란히 좌우 2열 컬럼(Dual Columns)**으로 동시 배치 (세로 공간 50% 절약)
@@ -436,14 +436,15 @@ openusage/
   herdr-app check ~/.config/herdr-app/mods/openusage
   ```
 
-### 14.4 버전 기록 및 검증 스크린샷 (v1.2.0)
+### 14.4 버전 기록 및 검증 스크린샷 (v1.3.0)
 
 상세 변경 이력은 [CHANGELOG.md](file:///Users/jwseo/Project/herdr-mods/CHANGELOG.md)를 참고하십시오.
 
 | 뷰 모드 | 설명 | 스크린샷 |
 | :--- | :--- | :--- |
-| **표준 사이드바 모드 (Standard View, 268px)** | 계정별 5시간/주간 프로그레스 바, 잔여 %, 리셋 카운트다운, 7d 소진 시 5h 0% 회색 처리 및 공식 OpenAI 로고 | [openusage-standard-v1.2.0.png](file:///Users/jwseo/Project/herdr-mods/docs/screenshots/openusage-standard-v1.2.0.png) |
-| **초슬림 레일 모드 (Rail View, 68px)** | Status-Trio & iPhone Duo 스타일 원형 듀얼 아크 게이지 (상단 5h/24h 배터리 아크 + % 숫자, 하단 7d 스마일 아크 + % 숫자, 중앙 공식 로고) | [openusage-rail-v1.2.0.png](file:///Users/jwseo/Project/herdr-mods/docs/screenshots/openusage-rail-v1.2.0.png) |
+| **표준 사이드바 모드 (Standard View, 268px)** | 계정별 5시간/주간 프로그레스 바, 잔여 %, 리셋 카운트다운, 7d 소진 시 5h 0% 회색 처리 및 공식 OpenAI 로고 | [openusage-standard-v1.3.0.png](file:///Users/jwseo/Project/herdr-mods/docs/screenshots/openusage-standard-v1.3.0.png) |
+| **초슬림 레일 모드 (Rail View, 68px, v1.3.0)** | 상단 5h/24h 짧은 윙 아크(Short Arc) + 하단 7d 긴 대형 크래들 아크(Long Cradle, 210°) 및 중앙 공식 로고 | [openusage-rail-v1.3.0.png](file:///Users/jwseo/Project/herdr-mods/docs/screenshots/openusage-rail-v1.3.0.png) |
 | **대시보드 모달 오버레이 (Dashboard Overlay)** | `mod.open '{"name":"openusage"}'` 전체 화면 대시보드, Pacing 가이드 및 카드별 상세 쿼터 분석 | [openusage-overlay-v1.2.0.png](file:///Users/jwseo/Project/herdr-mods/docs/screenshots/openusage-overlay-v1.2.0.png) |
+
 
 
