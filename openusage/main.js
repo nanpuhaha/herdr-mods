@@ -1043,10 +1043,10 @@ export default class OpenUsage extends View {
       const displayTop = `${topPercent}%`;
       const displayBottom = `${bottomPercent}%`;
 
-      const topFontSize = displayTop.length >= 4 ? 7.5 : (displayTop.length >= 3 ? 8.5 : 9);
-      const bottomFontSize = displayBottom.length >= 4 ? 7 : (displayBottom.length >= 3 ? 7.5 : 8);
+      const topFontSize = displayTop.length >= 4 ? 8 : (displayTop.length >= 3 ? 8.5 : 9.5);
+      const bottomFontSize = displayBottom.length >= 4 ? 8 : (displayBottom.length >= 3 ? 8.5 : 9.5);
 
-      // Pre-generated discrete PNGs (Status-Trio Upper & Lower Smile Arcs)
+      // Pre-generated discrete PNGs (Status-Trio Upper & Lower Arcs)
       const pTopInt = Number.isFinite(topPercent) ? Math.max(0, Math.min(100, Math.round(topPercent))) : 50;
       const pBotInt = Number.isFinite(bottomPercent) ? Math.max(0, Math.min(100, Math.round(bottomPercent))) : 50;
       const upperPngPath = `mods/openusage/cache/upper-${pTopInt}.png`;
@@ -1063,7 +1063,7 @@ export default class OpenUsage extends View {
       return div()
         .id(`rail-acc-${acc.id}`)
         .w(48)
-        .h(62)
+        .h(64)
         .relative()
         .flex()
         .flex_col()
@@ -1074,26 +1074,35 @@ export default class OpenUsage extends View {
         .rounded(8)
         .tooltip(tip)
         .on_click(() => run("mod.open", { name: "openusage" }))
-        // 1. Status-Trio Dual Gauge: 44x44
+        // 1. Top Remaining % (5h / 24h) positioned ABOVE the circular gauge
+        .child(
+          div()
+            .text_size(topFontSize)
+            .font_bold()
+            .text_color(topColor)
+            .mb(-2)
+            .child(displayTop)
+        )
+        // 2. Circular Dual Arc Gauge: 38x38
         .child(
           div()
             .relative()
-            .size(44)
-            // 1a. Upper Wide Arc Gauge (PNG)
+            .size(38)
+            // 2a. Upper Arch Gauge (PNG)
             .child(
               div()
                 .absolute()
                 .inset_0()
-                .child(image(upperPngPath).w(44).h(44))
+                .child(image(upperPngPath).w(38).h(38))
             )
-            // 1b. Lower Smile Arc Gauge (PNG)
+            // 2b. Lower Cradle Gauge (PNG)
             .child(
               div()
                 .absolute()
                 .inset_0()
-                .child(image(lowerPngPath).w(44).h(44))
+                .child(image(lowerPngPath).w(38).h(38))
             )
-            // 1c. Center Provider Logo (e.g. OpenAI white flower, Claude, Antigravity, OpenCode)
+            // 2c. Center Provider Logo (e.g. OpenAI white flower, Claude, Antigravity, OpenCode)
             .child(
               div()
                 .absolute()
@@ -1101,31 +1110,16 @@ export default class OpenUsage extends View {
                 .flex()
                 .items_center()
                 .justify_center()
-                .child(svg(provMeta.icon).size(15).text_color(is7dExhausted ? t.dim : t.foreground))
-            )
-            // 1d. Top Remaining % (5h / 24h) positioned in upper notch
-            .child(
-              div()
-                .absolute()
-                .top(0)
-                .w_full()
-                .flex()
-                .justify_center()
-                .child(
-                  div()
-                    .text_size(topFontSize)
-                    .font_bold()
-                    .text_color(topColor)
-                    .child(displayTop)
-                )
+                .child(svg(provMeta.icon).size(14).text_color(is7dExhausted ? t.dim : t.foreground))
             )
         )
-        // 2. Bottom Remaining % (7d) right below lower smile arc
+        // 3. Bottom Remaining % (7d) pulled closer to the circle
         .child(
           div()
             .text_size(bottomFontSize)
             .font_bold()
             .text_color(bottomColor)
+            .mt(-2)
             .child(displayBottom)
         );
   }

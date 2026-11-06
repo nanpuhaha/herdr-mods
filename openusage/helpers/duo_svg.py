@@ -2,16 +2,16 @@
 """
 Status-Trio Style Inverted Dual Arc Gauge Generator for OpenUsage.
 Design Architecture:
-- Upper Short Arc (5h / 24h percentage):
-  Shorter duration (5 hours) represented by shorter wings flanking the top percentage:
-  - Left wing: 215° to 245° (span 30°)
-  - Top gap: 245° to 295° (span 50°) for top 5h/24h % text
-  - Right wing: 295° to 325° (span 30°)
-  - Fills 0%~50% on left wing, 50%~100% on right wing.
+- Upper Short Arch (5h / 24h percentage):
+  Shorter duration (5 hours) represented by a sleek continuous arch spanning across the top:
+  - Arch: 230° to 310° (span 80°, centered at 270° / 12 o'clock)
+  - Fills clockwise from left to right (230° to 310°)
+  - Top 5h/24h % text is positioned above this arch
 - Lower Long Cradle (7d weekly percentage):
   Longer duration (7 days) represented by a prominent long cradle wrapping around the bottom:
   - Spans from 195° (9:30 o'clock) down through 90° (6 o'clock) to 345° (2:30 o'clock), span = 210°.
-  - Fills clockwise from left to right as 7d quota remains.
+  - Fills from left to right across the bottom as 7d quota remains.
+  - Symmetrical 35° gaps on both left (195°~230°) and right (310°~345°).
 - Colors:
   - <= 20%: #ef4444 (Vibrant Red)
   - <= 50%: #f59e0b (Vibrant Amber/Yellow)
@@ -47,29 +47,17 @@ def generate_upper_svg(p_percent=50.0):
     color = get_color(p)
 
     paths = []
-    # Left wing track: 215° to 245°
-    lx1, ly1 = pt(215)
-    lx2, ly2 = pt(245)
-    paths.append(f'<path d="M {lx1:.2f} {ly1:.2f} A {R} {R} 0 0 1 {lx2:.2f} {ly2:.2f}" fill="none" stroke="{TRACK_COLOR}" stroke-width="7.5" stroke-linecap="round" />')
+    # Short continuous arch track: 230° to 310° (span 80°)
+    tx1, ty1 = pt(230)
+    tx2, ty2 = pt(310)
+    paths.append(f'<path d="M {tx1:.2f} {ty1:.2f} A {R} {R} 0 0 1 {tx2:.2f} {ty2:.2f}" fill="none" stroke="{TRACK_COLOR}" stroke-width="7.5" stroke-linecap="round" />')
 
-    # Right wing track: 295° to 325°
-    rx1, ry1 = pt(295)
-    rx2, ry2 = pt(325)
-    paths.append(f'<path d="M {rx1:.2f} {ry1:.2f} A {R} {R} 0 0 1 {rx2:.2f} {ry2:.2f}" fill="none" stroke="{TRACK_COLOR}" stroke-width="7.5" stroke-linecap="round" />')
-
-    # Progress fill (0~50% on left wing, 50~100% on right wing)
+    # Progress fill: clockwise from 230°
     if p > 0.5:
-        if p <= 50.0:
-            sw = (p / 50.0) * 30.0
-            end_ang = 215.0 + sw
-            ex, ey = pt(end_ang)
-            paths.append(f'<path d="M {lx1:.2f} {ly1:.2f} A {R} {R} 0 0 1 {ex:.2f} {ey:.2f}" fill="none" stroke="{color}" stroke-width="7.5" stroke-linecap="round" />')
-        else:
-            paths.append(f'<path d="M {lx1:.2f} {ly1:.2f} A {R} {R} 0 0 1 {lx2:.2f} {ly2:.2f}" fill="none" stroke="{color}" stroke-width="7.5" stroke-linecap="round" />')
-            sw = ((p - 50.0) / 50.0) * 30.0
-            end_ang = 295.0 + sw
-            ex, ey = pt(end_ang)
-            paths.append(f'<path d="M {rx1:.2f} {ry1:.2f} A {R} {R} 0 0 1 {ex:.2f} {ey:.2f}" fill="none" stroke="{color}" stroke-width="7.5" stroke-linecap="round" />')
+        sw = (p / 100.0) * 80.0
+        end_ang = 230.0 + sw
+        ex, ey = pt(end_ang)
+        paths.append(f'<path d="M {tx1:.2f} {ty1:.2f} A {R} {R} 0 0 1 {ex:.2f} {ey:.2f}" fill="none" stroke="{color}" stroke-width="7.5" stroke-linecap="round" />')
 
     return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
 {chr(10).join(paths)}
