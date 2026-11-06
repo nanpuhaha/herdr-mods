@@ -21,7 +21,7 @@
    - 전체 500개 이상의 SVG 및 PNG 리소스 전면 재생성 완료.
 
 3. **실물 스크린샷 갱신 및 검증 완료**
-   - 레일 모드(`docs/screenshots/openusage-rail-v1.5.1-snug.png`) 실물 캡처 및 정상 작동 검증 완료.
+   - 레일 모드(`docs/screenshots/agent-usage-rail-v1.5.1-snug.png`) 실물 캡처 및 정상 작동 검증 완료.
 
 ---
 
@@ -37,14 +37,14 @@
    - `upper-tick-0..100.png` 및 `lower-tick-0..100.png` 202개 전용 고해상도 사전 래스터화 레이어로 GPUI 렌더링 성능과 안정성 완벽 확보.
 
 2. **초록색 대신 시그니처 파란색(Vibrant Blue `#3b82f6`) 전면 적용**
-   - 기존의 녹색(`#10b981`)을 공식 OpenUsage 앱의 시그니처 컬러인 생동감 있는 파란색(`#3b82f6`)으로 교체.
+   - 기존의 녹색(`#10b981`)을 생동감 있는 파란색(`#3b82f6`)으로 교체.
    - 다크 테마 배경에서 최적의 대비와 시인성을 제공하며, 주의(주황 `#f59e0b`), 위험/소진(빨강 `#ef4444`)과 선명한 3색 상태 체계 구축.
 
 3. **호버 툴팁에 페이스 가이드 수치 추가**
    - 마우스 호버 시 표시되는 툴팁에 `(가이드: XX%)` 안내를 추가하여 정밀한 시간별 소비 진도 확인 가능.
 
 4. **실물 스크린샷 갱신 및 검증 완료**
-   - 레일 모드(`docs/screenshots/openusage-rail-v1.5.0-pace-marks.png`) 실물 캡처 및 정상 작동 검증 완료.
+   - 레일 모드(`docs/screenshots/agent-usage-rail-v1.5.0-pace-marks.png`) 실물 캡처 및 정상 작동 검증 완료.
 
 ---
 
@@ -64,7 +64,7 @@
    - 위젯 자체는 군더더기 없는 순수 그래픽으로 유지하면서, 마우스 호버 시 5시간 및 7일 주간 잔여 % 수치(`• 5h 잔여: 79%`, `• 7d 잔여: 51%`)와 리셋 카운트다운을 풍부하게 표시.
 
 3. **실물 스크린샷 갱신 및 검증 완료**
-   - 레일 모드(`docs/screenshots/openusage-rail-v1.4.0-pure-gauge.png`) 실물 캡처 및 정상 작동 검증 완료.
+   - 레일 모드(`docs/screenshots/agent-usage-rail-v1.4.0-pure-gauge.png`) 실물 캡처 및 정상 작동 검증 완료.
 
 ---
 
@@ -80,7 +80,7 @@
    - 마우스 호버 시 표시되는 툴팁(`tip`)에는 기존대로 상세 설명 및 단위(`잔여: 79%`)가 그대로 유지되어 정보 손실 없음.
 
 2. **실물 스크린샷 갱신 및 검증 완료**
-   - 레일 모드(`docs/screenshots/openusage-rail-v1.3.2.png`) 실물 캡처 및 정상 렌더링 확인 완료.
+   - 레일 모드(`docs/screenshots/agent-usage-rail-v1.3.2.png`) 실물 캡처 및 정상 렌더링 확인 완료.
 
 ---
 
@@ -103,7 +103,7 @@
    - 0%~100% 상단/하단 게이지 308개 SVG 및 PNG 리소스 전면 재생성.
 
 4. **실물 스크린샷 갱신 및 검증 완료**
-   - 레일 모드(`docs/screenshots/openusage-rail-v1.3.1.png`) 실물 캡처 완료.
+   - 레일 모드(`docs/screenshots/agent-usage-rail-v1.3.1.png`) 실물 캡처 완료.
 
 ---
 
@@ -120,7 +120,7 @@
    - 0%~100% 상단/하단/통합 게이지 총 308개 SVG 및 PNG 캐시 리소스 전면 재생성.
 
 2. **검증 스크린샷 갱신**
-   - 반전된 원형 듀얼 게이지 레일 모드(`docs/screenshots/openusage-rail-v1.3.0.png`) 및 표준 사이드바 모드(`docs/screenshots/openusage-standard-v1.3.0.png`) 실물 캡처 및 검증 완료.
+   - 반전된 원형 듀얼 게이지 레일 모드(`docs/screenshots/agent-usage-rail-v1.3.0.png`) 및 표준 사이드바 모드(`docs/screenshots/agent-usage-standard-v1.3.0.png`) 실물 캡처 및 검증 완료.
 
 ---
 
@@ -143,10 +143,10 @@ Status-Trio 및 iPhone Duo 스타일 원형 듀얼 아크 게이지 레일 뷰 �
      - **레일 모드**: 상단 아크가 채워지지 않은 빈 회색 트랙(`upper-0.png`)으로 렌더링되며, 상단 텍스트 0%(`t.dim`), 중앙 아이콘도 dim 처리되어 쿼터 소진 상태임을 한눈에 직관적으로 알림.
 
 3. **고해상도 사전 래스터화 PNG 게이지 파이프라인 (308개 파일)**
-   - GPUI `image()` 컴포넌트의 벡터 SVG 렌더링 이슈를 원천 방지하기 위해 macOS `sips` 및 네이티브 SVG 기하 엔진(`helpers/duo_svg.py`)을 활용하여 0%~100% 상단/하단 아크를 144x144 고해상도 PNG 파일로 사전 빌드(`openusage/cache/`).
+   - GPUI `image()` 컴포넌트의 벡터 SVG 렌더링 이슈를 원천 방지하기 위해 macOS `sips` 및 네이티브 SVG 기하 엔진(`helpers/duo_svg.py`)을 활용하여 0%~100% 상단/하단 아크를 144x144 고해상도 PNG 파일로 사전 빌드(`agent-usage/cache/`).
 
 4. **공식 OpenAI ChatGPT 벡터 로고 채택**
-   - 기존의 단순 박스/사각 형태 아이콘 대신 [LobeHub Icons](https://lobehub.com/icons) 공식 OpenAI ChatGPT 꽃/매듭 로고 벡터를 `openusage/icons/openai.svg` 및 `openusage/icons/codex.svg`에 전면 적용.
+   - 기존의 단순 박스/사각 형태 아이콘 대신 [LobeHub Icons](https://lobehub.com/icons) 공식 OpenAI ChatGPT 꽃/매듭 로고 벡터를 `agent-usage/icons/openai.svg` 및 `agent-usage/icons/codex.svg`에 전면 적용.
 
 5. **GPUI Rust 타입 오류 및 렌더링 안정성 수정**
    - 선형 가이드라인 마커(`.left(guidePct + "%")`)에서 발생하던 Rust GPUI 크래시(`expected a number, got string`)를 해결하고, 비례 너비 flex spacer 기반 레이아웃 구조로 전면 교체.
@@ -157,9 +157,9 @@ Status-Trio 및 iPhone Duo 스타일 원형 듀얼 아크 게이지 레일 뷰 �
 
 | 모드 | 스크린샷 |
 | :--- | :--- |
-| **표준 사이드바 (Standard View, 268px)** | ![Standard View](docs/screenshots/openusage-standard-v1.2.0.png) |
-| **레일 모드 (Rail View, 68px)** | ![Rail View](docs/screenshots/openusage-rail-v1.2.0.png) |
-| **대시보드 오버레이 (Dashboard Overlay)** | ![Overlay View](docs/screenshots/openusage-overlay-v1.2.0.png) |
+| **표준 사이드바 (Standard View, 268px)** | ![Standard View](docs/screenshots/agent-usage-standard-v1.2.0.png) |
+| **레일 모드 (Rail View, 68px)** | ![Rail View](docs/screenshots/agent-usage-rail-v1.2.0.png) |
+| **대시보드 오버레이 (Dashboard Overlay)** | ![Overlay View](docs/screenshots/agent-usage-overlay-v1.2.0.png) |
 
 ---
 
@@ -168,13 +168,13 @@ Status-Trio 및 iPhone Duo 스타일 원형 듀얼 아크 게이지 레일 뷰 �
 - **4단계 반응형 사이드바 레이아웃 (Rail / Narrow / Standard / Wide)** 도입.
 - **와이드 모드 (>= 320px)**: 5시간 및 주간 게이지 바를 좌우 2열 컬럼으로 나란히 배치.
 - **Open 시 자동 새로고침 억제**: 대시보드 팝업 오픈 시 캐시된 데이터를 즉시 렌더링하고, 수동 새로고침(`Refresh ↻`) 버튼 제공.
-- **다중 계정 관리 기능**: `~/.config/herdr-app/openusage-accounts.json` 지원 및 상단 설정(Settings) 다이얼로그 추가.
+- **다중 계정 관리 기능**: `~/.config/herdr-app/agent-usage-accounts.json` 지원 및 상단 설정(Settings) 다이얼로그 추가.
 
 ---
 
 ## [v1.0.0] - 2026-11-04
 
-- **초기 OpenUsage 모드 릴리스**.
+- **초기 Agent Usage (`agent-usage`) 모드 릴리스**.
 - 4대 프로바이더(Claude Code, OpenAI Codex, Google Antigravity, OpenCode Go) 쿼터 조회.
-- 5시간 세션 및 주간/월간 쿼터 잔여량 게이지 및 OpenUsage 페이스 가이드라인(`|`) 구현.
+- 5시간 세션 및 주간/월간 쿼터 잔여량 게이지 및 페이스 가이드라인(`|`) 구현.
 - Herdr 활성 에이전트 목록 실시간 연동 및 포커스 이동 기능.

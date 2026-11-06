@@ -1,11 +1,21 @@
 #!/usr/bin/env python3
-"""Manage OpenUsage multi-account configurations and settings."""
+"""Manage Agent Usage multi-account configurations and settings."""
 
 import json
 import os
 import sys
 
-CONFIG_PATH = os.path.expanduser("~/.config/herdr-app/openusage-accounts.json")
+PRIMARY_CONFIG_PATH = os.path.expanduser("~/.config/herdr-app/agent-usage-accounts.json")
+LEGACY_CONFIG_PATH = os.path.expanduser("~/.config/herdr-app/openusage-accounts.json")
+
+def get_config_path():
+    if os.path.exists(PRIMARY_CONFIG_PATH):
+        return PRIMARY_CONFIG_PATH
+    if os.path.exists(LEGACY_CONFIG_PATH):
+        return LEGACY_CONFIG_PATH
+    return PRIMARY_CONFIG_PATH
+
+CONFIG_PATH = get_config_path()
 
 DEFAULT_CONFIG = {
     "accounts": [

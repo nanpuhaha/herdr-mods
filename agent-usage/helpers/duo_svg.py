@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Status-Trio Style Inverted Dual Arc Gauge Generator for OpenUsage.
+Status-Trio Style Inverted Dual Arc Gauge Generator for Agent Usage.
 Design Architecture:
 - Upper Short Arch (5h / 24h percentage):
   Shorter duration (5 hours) represented by a sleek continuous arch spanning across the top:
@@ -15,7 +15,7 @@ Design Architecture:
 - Colors:
   - <= 20%: #ef4444 (Vibrant Red)
   - <= 50%: #f59e0b (Vibrant Amber/Yellow)
-  - > 50%: #3b82f6 (Vibrant Blue, OpenUsage default)
+  - > 50%: #3b82f6 (Vibrant Blue, Agent Usage default)
 - Pace Guidelines:
   - White tick marks crossing the arc track to indicate expected quota pacing.
 """
@@ -128,8 +128,8 @@ def generate_combined_duo_svg(p_top=50.0, p_bottom=50.0):
 def pregenerate_all():
     home = os.path.expanduser("~")
     dirs = [
-        os.path.join(home, ".config/herdr-app/mods/openusage/cache"),
-        os.path.join(home, "Project/herdr-mods/openusage/cache"),
+        os.path.join(home, ".config/herdr-app/mods/agent-usage/cache"),
+        os.path.join(home, "Project/herdr-mods/agent-usage/cache"),
     ]
     for d in dirs:
         os.makedirs(d, exist_ok=True)

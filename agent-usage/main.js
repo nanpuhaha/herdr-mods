@@ -6,7 +6,7 @@ const PROVIDER_METAS = {
   claude: {
     name: "Claude Code",
     script: "helpers/claude.py",
-    icon: "mods/openusage/icons/claude.svg",
+    icon: "mods/agent-usage/icons/claude.svg",
     color: "#d97757",
     poll: 300_000,
     stale: 10 * 60_000,
@@ -15,7 +15,7 @@ const PROVIDER_METAS = {
   codex: {
     name: "OpenAI ChatGPT",
     script: "helpers/codex.py",
-    icon: "mods/openusage/icons/openai.svg",
+    icon: "mods/agent-usage/icons/openai.svg",
     color: "#10a37f",
     poll: 120_000,
     stale: 10 * 60_000,
@@ -24,7 +24,7 @@ const PROVIDER_METAS = {
   antigravity: {
     name: "Google Antigravity",
     script: "helpers/antigravity.py",
-    icon: "mods/openusage/icons/antigravity.svg",
+    icon: "mods/agent-usage/icons/antigravity.svg",
     color: "#4285f4",
     poll: 600_000,
     stale: 20 * 60_000,
@@ -33,7 +33,7 @@ const PROVIDER_METAS = {
   opencode: {
     name: "OpenCode",
     script: "helpers/opencode.py",
-    icon: "mods/openusage/icons/opencode.svg",
+    icon: "mods/agent-usage/icons/opencode.svg",
     color: "#8b5cf6",
     poll: 120_000,
     stale: 10 * 60_000,
@@ -52,7 +52,7 @@ const PERIODS = {
 
 // 60-second cooldown: Opening/toggling the mod within 60s will NEVER trigger a refetch
 const MIN_REFRESH_INTERVAL = 60_000;
-const CACHE_KEY = "openusage.accounts_cache";
+const CACHE_KEY = "agent_usage.accounts_cache";
 
 function getSharedCache() {
   try {
@@ -228,13 +228,13 @@ function evaluatePace({ used, limit = 100, resetsAt, periodSeconds, now = Date.n
   };
 }
 
-export default class OpenUsage extends View {
+export default class AgentUsage extends View {
   init(_props, cx) {
     this.viewMode = props()?.view === "settings" ? "settings" : "dashboard";
     this.accounts = [];
 
     // Stamp load time into shared memory for diagnostics
-    try { setShared("openusage.build_v", "2026-11-05-v3-debug"); } catch {}
+    try { setShared("agent_usage.build_v", "2026-11-05-v3-debug"); } catch {}
 
     // Warm cache from shared Herdr memory across all open instances (sidebar, tabs, overlays)
     this.accountData = { ...getSharedCache() };
@@ -249,7 +249,7 @@ export default class OpenUsage extends View {
   loadAccounts(cx) {
     cx.spawn(async (cx) => {
       try {
-        const scriptPath = `${appHome()}/mods/openusage/helpers/accounts.py`;
+        const scriptPath = `${appHome()}/mods/agent-usage/helpers/accounts.py`;
         const res = await exec("python3", [scriptPath, "list"]);
         if (res.code === 0) {
           const cfg = JSON.parse(res.stdout);
@@ -312,7 +312,7 @@ export default class OpenUsage extends View {
 
     cx.spawn(async (cx) => {
       try {
-        const scriptPath = `${appHome()}/mods/openusage/${provMeta.script}`;
+        const scriptPath = `${appHome()}/mods/agent-usage/${provMeta.script}`;
         const args = [scriptPath];
         if (account.provider === "claude" && account.keychainService) {
           args.push(account.keychainService);
@@ -359,7 +359,7 @@ export default class OpenUsage extends View {
   toggleAccount(accId, cx) {
     cx.spawn(async (cx) => {
       try {
-        const scriptPath = `${appHome()}/mods/openusage/helpers/accounts.py`;
+        const scriptPath = `${appHome()}/mods/agent-usage/helpers/accounts.py`;
         await exec("python3", [scriptPath, "toggle", accId]);
         this.loadAccounts(cx);
       } catch (err) {
@@ -371,7 +371,7 @@ export default class OpenUsage extends View {
   deleteAccount(accId, cx) {
     cx.spawn(async (cx) => {
       try {
-        const scriptPath = `${appHome()}/mods/openusage/helpers/accounts.py`;
+        const scriptPath = `${appHome()}/mods/agent-usage/helpers/accounts.py`;
         await exec("python3", [scriptPath, "remove", accId]);
         this.loadAccounts(cx);
       } catch (err) {
@@ -394,7 +394,7 @@ export default class OpenUsage extends View {
         if (provider === "claude" && customArg) newAcc.keychainService = customArg;
         if (provider === "codex" && customArg) newAcc.authPath = customArg;
 
-        const scriptPath = `${appHome()}/mods/openusage/helpers/accounts.py`;
+        const scriptPath = `${appHome()}/mods/agent-usage/helpers/accounts.py`;
         await exec("python3", [scriptPath, "add", JSON.stringify(newAcc)]);
         this.loadAccounts(cx);
       } catch (err) {
@@ -476,7 +476,7 @@ export default class OpenUsage extends View {
   }
 
   /**
-   * Renders the Remaining Gauge with OpenUsage Pace Guide Line (Full Dashboard view)
+   * Renders the Remaining Gauge with Pace Guide Line (Full Dashboard view)
    */
   renderPacedMetricRow(t, label, windowData, periodSeconds) {
     if (!windowData) return null;
@@ -731,7 +731,7 @@ export default class OpenUsage extends View {
                   .child(
                     state.loading
                       ? svg("mods/workspace-chrome/spinner.svg").size(14).spin(900)
-                      : svg("mods/openusage/icons/refresh.svg").size(14)
+                      : svg("mods/agent-usage/icons/refresh.svg").size(14)
                   )
               )
           )
@@ -804,7 +804,7 @@ export default class OpenUsage extends View {
    */
   renderSidebar(cx, t) {
     const sbWidth = this.sidebarWidth || getSidebarWidth();
-    try { setShared("openusage.current_sbWidth", { sidebarWidth: this.sidebarWidth, sbWidth }); } catch {}
+    try { setShared("agent_usage.current_sbWidth", { sidebarWidth: this.sidebarWidth, sbWidth }); } catch {}
     const isRail = sbWidth < 140;
     const isNarrow = sbWidth >= 140 && sbWidth < 230;
     const isWide = sbWidth >= 320;
@@ -836,9 +836,9 @@ export default class OpenUsage extends View {
             .rounded(4)
             .cursor_pointer()
             .hover((s) => s.bg(t.hover))
-            .tooltip("OpenUsage · Usages (Click to open)")
-            .on_click(() => run("mod.open", { name: "openusage" }))
-            .child(svg("mods/openusage/icons/openusage.svg").size(16).text_color(t.accent))
+            .tooltip("Agent Usage (Click to open)")
+            .on_click(() => run("mod.open", { name: "agent-usage" }))
+            .child(svg("mods/agent-usage/icons/agent-usage.svg").size(16).text_color(t.accent))
         )
         .child(
           v_flex()
@@ -883,7 +883,7 @@ export default class OpenUsage extends View {
             h_flex()
               .gap(isNarrow ? 4 : 6)
               .items_center()
-              .child(svg("mods/openusage/icons/openusage.svg").size(14).text_color(t.accent))
+              .child(svg("mods/agent-usage/icons/agent-usage.svg").size(14).text_color(t.accent))
               .child(div().font_bold().text_size(isNarrow ? 10.5 : 11.5).child("Usages"))
               .child(div().size(6).rounded(3).bg(overall.color))
               .when(isWide, (el) =>
@@ -910,7 +910,7 @@ export default class OpenUsage extends View {
                   .child(
                     anyLoading
                       ? svg("mods/workspace-chrome/spinner.svg").size(12).spin(900)
-                      : svg("mods/openusage/icons/refresh.svg").size(12)
+                      : svg("mods/agent-usage/icons/refresh.svg").size(12)
                   )
               )
               .child(
@@ -922,7 +922,7 @@ export default class OpenUsage extends View {
                   .text_size(isNarrow ? 9.5 : 10)
                   .text_color(t.muted)
                   .hover((s) => s.bg(t.hover))
-                  .on_click(() => run("mod.open", { name: "openusage" }))
+                  .on_click(() => run("mod.open", { name: "agent-usage" }))
                   .child(isNarrow ? "↗" : "↗ Open")
               )
           )
@@ -1055,8 +1055,8 @@ export default class OpenUsage extends View {
       // Pre-generated discrete PNGs (Status-Trio Upper & Lower Arcs)
       const pTopInt = Number.isFinite(topPercent) ? Math.max(0, Math.min(100, Math.round(topPercent))) : 50;
       const pBotInt = Number.isFinite(bottomPercent) ? Math.max(0, Math.min(100, Math.round(bottomPercent))) : 50;
-      const upperPngPath = `mods/openusage/cache/upper-${pTopInt}.png`;
-      const lowerPngPath = `mods/openusage/cache/lower-${pBotInt}.png`;
+      const upperPngPath = `mods/agent-usage/cache/upper-${pTopInt}.png`;
+      const lowerPngPath = `mods/agent-usage/cache/lower-${pBotInt}.png`;
 
       const tip = [
         `${acc.name} (${acc.label || "Default"})`,
@@ -1078,7 +1078,7 @@ export default class OpenUsage extends View {
         .hover((s) => s.bg(t.hover))
         .rounded(8)
         .tooltip(tip)
-        .on_click(() => run("mod.open", { name: "openusage" }))
+        .on_click(() => run("mod.open", { name: "agent-usage" }))
         // Pure Status-Trio Dual Arc Gauge: 40x40 (Minimal Icon Widget with Pace Marks)
         .child(
           div()
@@ -1097,7 +1097,7 @@ export default class OpenUsage extends View {
                 div()
                   .absolute()
                   .inset_0()
-                  .child(image(`mods/openusage/cache/upper-tick-${topGuidePct}.png`).w(40).h(40))
+                  .child(image(`mods/agent-usage/cache/upper-tick-${topGuidePct}.png`).w(40).h(40))
               )
             )
             // 3. Lower Cradle Gauge (PNG)
@@ -1113,7 +1113,7 @@ export default class OpenUsage extends View {
                 div()
                   .absolute()
                   .inset_0()
-                  .child(image(`mods/openusage/cache/lower-tick-${botGuidePct}.png`).w(40).h(40))
+                  .child(image(`mods/agent-usage/cache/lower-tick-${botGuidePct}.png`).w(40).h(40))
               )
             )
             // 5. Center Provider Logo (e.g. OpenAI white flower, Claude, Antigravity, OpenCode)
@@ -1349,7 +1349,7 @@ export default class OpenUsage extends View {
       .border_color(t.border)
       .cursor_pointer()
       .hover((s) => s.bg(t.hover))
-      .on_click(() => run("mod.open", { name: "openusage" }))
+      .on_click(() => run("mod.open", { name: "agent-usage" }))
       // Card Header: Icon + Name + Dot
       .child(
         h_flex()
@@ -1435,7 +1435,7 @@ export default class OpenUsage extends View {
                   })
                   .child("← Back to Dashboard")
               )
-              .child(div().font_bold().text_size(15).child("OpenUsage Settings & Accounts"))
+              .child(div().font_bold().text_size(15).child("Agent Usage Settings & Accounts"))
           )
           .child(
             div()
@@ -1443,7 +1443,7 @@ export default class OpenUsage extends View {
               .py(4)
               .rounded(4)
               .text_color(t.muted)
-              .child("Config: ~/.config/herdr-app/openusage-accounts.json")
+              .child("Config: ~/.config/herdr-app/agent-usage-accounts.json")
           )
       )
       // Settings Body
@@ -1481,7 +1481,7 @@ export default class OpenUsage extends View {
                           h_flex()
                             .gap(10)
                             .items_center()
-                            .child(svg(PROVIDER_METAS[acc.provider]?.icon ?? "mods/openusage/icons/openai.svg").size(18))
+                            .child(svg(PROVIDER_METAS[acc.provider]?.icon ?? "mods/agent-usage/icons/openai.svg").size(18))
                             .child(
                               v_flex()
                                 .gap(2)
@@ -1676,7 +1676,7 @@ export default class OpenUsage extends View {
             h_flex()
               .gap(10)
               .items_center()
-              .child(svg("mods/openusage/icons/openusage.svg").size(22).text_color(t.accent))
+              .child(svg("mods/agent-usage/icons/agent-usage.svg").size(22).text_color(t.accent))
               .child(
                 v_flex()
                   .gap(1)
@@ -1684,7 +1684,7 @@ export default class OpenUsage extends View {
                     h_flex()
                       .gap(6)
                       .items_center()
-                      .child(div().font_bold().text_size(15).child("OpenUsage"))
+                      .child(div().font_bold().text_size(15).child("Agent Usage"))
                       .child(
                         div()
                           .px(5)
@@ -1744,7 +1744,7 @@ export default class OpenUsage extends View {
                   .child(
                     anyLoading
                       ? svg("mods/workspace-chrome/spinner.svg").size(13).spin(900)
-                      : svg("mods/openusage/icons/refresh.svg").size(13)
+                      : svg("mods/agent-usage/icons/refresh.svg").size(13)
                   )
                   .child(div().text_size(11.5).font_semibold().child(anyLoading ? "Refreshing..." : "Refresh"))
               )

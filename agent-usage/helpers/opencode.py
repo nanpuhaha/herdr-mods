@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Print OpenCode Go usage limits as JSON for OpenUsage mod."""
+"""Print OpenCode Go usage limits as JSON for Agent Usage mod."""
 
 import json
 import os

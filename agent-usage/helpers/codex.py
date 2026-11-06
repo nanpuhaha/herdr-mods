@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Print Codex subscription usage as one JSON object for OpenUsage mod.
+"""Print Codex subscription usage as one JSON object for Agent Usage mod.
 
 Supports custom auth.json path via sys.argv[1].
 """
