@@ -1124,7 +1124,7 @@ export default class OpenUsage extends View {
                 .flex()
                 .items_center()
                 .justify_center()
-                .child(svg(provMeta.icon).size(15).text_color(is7dExhausted ? t.dim : t.foreground))
+                .child(svg(provMeta.icon).size(18).text_color(is7dExhausted ? t.dim : t.foreground))
             )
         );
   }

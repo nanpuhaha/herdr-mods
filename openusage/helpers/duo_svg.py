@@ -28,7 +28,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 CX = 60.0
 CY = 60.0
-R = 48.0
+R = 42.0
 TO_RAD = math.pi / 180.0
 TRACK_COLOR = "#3f3f46"
 
@@ -70,10 +70,12 @@ def generate_upper_tick_svg(p_percent=50.0):
     ang = 230.0 + (p / 100.0) * 80.0
     rad = ang * TO_RAD
     cosA, sinA = math.cos(rad), math.sin(rad)
-    x1, y1 = CX + 41.0 * cosA, CY + 41.0 * sinA
-    x2, y2 = CX + 55.0 * cosA, CY + 55.0 * sinA
+    in_r = R - 4.5
+    out_r = R + 4.5
+    x1, y1 = CX + in_r * cosA, CY + in_r * sinA
+    x2, y2 = CX + out_r * cosA, CY + out_r * sinA
     return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
-  <line x1="{x1:.2f}" y1="{y1:.2f}" x2="{x2:.2f}" y2="{y2:.2f}" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" opacity="0.95" />
+  <line x1="{x1:.2f}" y1="{y1:.2f}" x2="{x2:.2f}" y2="{y2:.2f}" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" opacity="0.95" />
 </svg>'''
 
 def generate_lower_svg(p_percent=50.0):
@@ -103,10 +105,12 @@ def generate_lower_tick_svg(p_percent=50.0):
     ang = (195.0 - (p / 100.0) * 210.0) % 360.0
     rad = ang * TO_RAD
     cosA, sinA = math.cos(rad), math.sin(rad)
-    x1, y1 = CX + 41.0 * cosA, CY + 41.0 * sinA
-    x2, y2 = CX + 55.0 * cosA, CY + 55.0 * sinA
+    in_r = R - 4.5
+    out_r = R + 4.5
+    x1, y1 = CX + in_r * cosA, CY + in_r * sinA
+    x2, y2 = CX + out_r * cosA, CY + out_r * sinA
     return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
-  <line x1="{x1:.2f}" y1="{y1:.2f}" x2="{x2:.2f}" y2="{y2:.2f}" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" opacity="0.95" />
+  <line x1="{x1:.2f}" y1="{y1:.2f}" x2="{x2:.2f}" y2="{y2:.2f}" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" opacity="0.95" />
 </svg>'''
 
 def generate_combined_duo_svg(p_top=50.0, p_bottom=50.0):
