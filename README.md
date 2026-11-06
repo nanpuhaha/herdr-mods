@@ -15,7 +15,7 @@ The flagship mod in this repository is **Agent Usage** (`agent-usage`) — an in
 
 ## 📸 Visual Showcase
 
-### 1. Ultra-Slim Rail Complication View (`< 140px`)
+### 1. Ultra-Slim Rail Complication View (`< 160px`)
 Designed for minimalists. When the sidebar is collapsed into a rail (48px–68px), each provider transforms into a 48x48 dial widget featuring concentric dual arcs, subtle pacing marks, vibrant blue metrics, and a snug-fit vector logo.
 
 | Rail Complication (v1.5.1) | Standard Sidebar View (268px) | Full Dashboard Modal (920x660) |
@@ -36,13 +36,13 @@ Monitor your active subscriptions and limits across top AI coding providers in o
 
 ### 📊 4-Tier Adaptive Sidebar Layout
 The widget automatically morphs into optimal layouts as you resize Herdr's sidebar:
-- **Rail Mode (`< 140px`)**: Pure 48x48 icon buttons with concentric dual arcs:
+- **Rail Mode (`< 160px`)**: Pure 48x48 icon buttons with concentric dual arcs:
   - **Upper Arc (5h/24h)**: An 80° smooth arch (`⌒`, 230°–310°) representing short-term session limits.
   - **Lower Arc (7d)**: A 210° deep cradle (`∪`, 195°–345°) representing weekly rolling quotas.
   - **Calibrated Pacing Ticks**: 9.0px dial index markers projected onto the tracks indicating expected remaining quota based on elapsed time.
   - **Glanceable Status**: Vibrant Blue (`#3b82f6`) for healthy quotas, Amber (`#f59e0b`) for caution, Crimson (`#ef4444`) for exhaustion, and Dimmed Grey when depleted.
   - **Zero Visual Clutter**: Clean geometry without distracting numeric text. Hover tooltips provide exact percentages and reset times.
-- **Narrow Mode (`140px ~ 230px`)**: Compact stacked metric rows with abbreviated labels (`5h`, `7d`).
+- **Narrow Mode (`160px ~ 230px`)**: Compact stacked metric rows with abbreviated labels (`5h`, `7d`).
 - **Standard Mode (`230px ~ 320px`, default 268px)**: Full metric bars, remaining percentages, linear pacing lines, and countdown clocks.
 - **Wide Mode (`>= 320px`)**: Dual-column parallel layout rendering 5h and 7d metrics side-by-side, cutting vertical space consumption by 50%.
 

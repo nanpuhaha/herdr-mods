@@ -797,17 +797,19 @@ export default class AgentUsage extends View {
 
   /**
    * Responsive Sidebar View: Adapts layout based on sidebar width
-   * - Rail (< 140px): Ultra-compact icon strip with status dots & hover tooltips
-   * - Narrow (140px ~ 230px): Compact stacked rows with short labels (5h, 7d)
+   * - Rail (< 160px): Ultra-compact icon complication with status dots & hover tooltips (matches spaces/agents narrow() threshold)
+   * - Narrow (160px ~ 230px): Compact stacked rows with short labels (5h, 7d)
    * - Standard (230px ~ 320px): Full stacked dual rows (5시간, 주간)
    * - Wide (>= 320px): Dual columns side-by-side (5시간 | 주간) on a single row!
    */
   renderSidebar(cx, t) {
-    const sbWidth = this.sidebarWidth || getSidebarWidth();
-    try { setShared("agent_usage.current_sbWidth", { sidebarWidth: this.sidebarWidth, sbWidth }); } catch {}
-    const isRail = sbWidth < 140;
-    const isNarrow = sbWidth >= 140 && sbWidth < 230;
-    const isWide = sbWidth >= 320;
+    const layoutSbPx = findNode(layout(), "sidebar")?.size?.px;
+    const isSidebarNarrow = typeof layoutSbPx === "number" && layoutSbPx < 160;
+    const sbWidth = this.sidebarWidth || layoutSbPx || getSidebarWidth();
+    try { setShared("agent_usage.current_sbWidth", { sidebarWidth: this.sidebarWidth, sbWidth, isSidebarNarrow }); } catch {}
+    const isRail = isSidebarNarrow || sbWidth < 160;
+    const isNarrow = !isRail && sbWidth < 230;
+    const isWide = !isRail && sbWidth >= 320;
     const mode = isRail ? "rail" : isNarrow ? "narrow" : isWide ? "wide" : "standard";
 
     const overall = this.getOverallPacingSummary(t);
