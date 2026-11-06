@@ -1,3 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
-  <line x1="42.86" y1="26.65" x2="38.74" y2="18.64" stroke="#ffffff" stroke-width="2.6" stroke-linecap="round" opacity="0.95" />
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><line x1="42.86" x2="38.74" y1="26.65" y2="18.64" stroke="#fff" stroke-linecap="round" stroke-width="2.6" opacity=".95"/></svg>
