@@ -1040,11 +1040,11 @@ export default class OpenUsage extends View {
           : "#10b981";
 
       const topLabel = isOpenCode ? "24h" : "5h";
-      const displayTop = `${topPercent}%`;
-      const displayBottom = `${bottomPercent}%`;
+      const displayTop = `${topPercent}`;
+      const displayBottom = `${bottomPercent}`;
 
-      const topFontSize = displayTop.length >= 4 ? 8 : (displayTop.length >= 3 ? 8.5 : 9.5);
-      const bottomFontSize = displayBottom.length >= 4 ? 8 : (displayBottom.length >= 3 ? 8.5 : 9.5);
+      const topFontSize = displayTop.length >= 3 ? 9 : 10.5;
+      const bottomFontSize = displayBottom.length >= 3 ? 9 : 10.5;
 
       // Pre-generated discrete PNGs (Status-Trio Upper & Lower Arcs)
       const pTopInt = Number.isFinite(topPercent) ? Math.max(0, Math.min(100, Math.round(topPercent))) : 50;
@@ -1054,8 +1054,8 @@ export default class OpenUsage extends View {
 
       const tip = [
         `${acc.name} (${acc.label || "Default"})`,
-        `• ${topLabel} 잔여: ${displayTop}${is7dExhausted ? " (주간 소진으로 비활성)" : ""}`,
-        `• 7d 잔여: ${displayBottom}`,
+        `• ${topLabel} 잔여: ${topPercent}%${is7dExhausted ? " (주간 소진으로 비활성)" : ""}`,
+        `• 7d 잔여: ${bottomPercent}%`,
         ...summaries.filter((s) => !s.includes(topLabel) && !s.includes("7d")),
         "클릭하여 전체 사용량 열기",
       ].join("\n");
