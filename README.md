@@ -15,13 +15,12 @@ The flagship mod in this repository is **Agent Usage** (`agent-usage`) — an in
 
 ## 📸 Visual Showcase
 
-### 1. Ultra-Slim Rail Complication View (`< 160px`)
-Designed for minimalists. When the sidebar is collapsed into a rail (48px–68px), each provider transforms into a 48x48 dial widget featuring concentric dual arcs, subtle pacing marks, vibrant blue metrics, and a snug-fit vector logo.
+Experience glanceable AI quota tracking across Herdr's adaptive workspace layouts:
 
-| Rail Complication (v1.5.1) | Standard Sidebar View (268px) | Full Dashboard Modal (920x660) |
+| Ultra-Slim Rail (`< 160px`) | Standard Sidebar View (`268px`) | Full Dashboard Modal (`920x660`) |
 | :---: | :---: | :---: |
-| <img src="docs/screenshots/agent-usage-rail-v1.5.1-snug.png" width="180" alt="Rail Complication View" /> | <img src="docs/screenshots/agent-usage-standard-v1.3.0.png" width="280" alt="Standard Sidebar View" /> | <img src="docs/screenshots/agent-usage-overlay-v1.2.0.png" width="380" alt="Full Dashboard Overlay" /> |
-| *Top 5h continuous arch (`⌒`), bottom 7d cradle (`∪`), calibrated pacing tick, and snug-fit logo* | *Linear progress bars, remaining %, reset countdown timers, and linear pacing markers* | *Comprehensive quota analytics, multi-account overview, pacing diagnostics, and 1-click agent focus* |
+| <img src="docs/screenshots/agent-usage-rail-v1.5.1-snug.png" width="160" alt="Rail Complication View" /> | <img src="docs/screenshots/agent-usage-standard-v1.3.0.png" width="230" alt="Standard Sidebar View" /> | <img src="docs/screenshots/agent-usage-overlay-v1.2.0.png" width="450" alt="Full Dashboard Overlay" /> |
+| **Pure Dial Complication**<br/><sub>Concentric dual arcs, calibrated pacing tick, and snug-fit logo</sub> | **Detailed Metric Cards**<br/><sub>Linear progress bars, remaining %, countdown timers, and linear pacing markers</sub> | **Comprehensive Analytics**<br/><sub>Multi-account overview, consumption pacing diagnostics, and 1-click agent focus</sub> |
 
 ---
 
