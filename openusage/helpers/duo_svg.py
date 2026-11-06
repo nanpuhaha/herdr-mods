@@ -15,7 +15,9 @@ Design Architecture:
 - Colors:
   - <= 20%: #ef4444 (Vibrant Red)
   - <= 50%: #f59e0b (Vibrant Amber/Yellow)
-  - > 50%: #10b981 (Vibrant Emerald/Green)
+  - > 50%: #3b82f6 (Vibrant Blue, OpenUsage default)
+- Pace Guidelines:
+  - White tick marks crossing the arc track to indicate expected quota pacing.
 """
 import sys
 import os
@@ -40,7 +42,7 @@ def get_color(p):
     elif p <= 50.0:
         return "#f59e0b"
     else:
-        return "#10b981"
+        return "#3b82f6"
 
 def generate_upper_svg(p_percent=50.0):
     p = max(0.0, min(100.0, float(p_percent)))
@@ -61,6 +63,17 @@ def generate_upper_svg(p_percent=50.0):
 
     return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
 {chr(10).join(paths)}
+</svg>'''
+
+def generate_upper_tick_svg(p_percent=50.0):
+    p = max(0.0, min(100.0, float(p_percent)))
+    ang = 230.0 + (p / 100.0) * 80.0
+    rad = ang * TO_RAD
+    cosA, sinA = math.cos(rad), math.sin(rad)
+    x1, y1 = CX + 41.0 * cosA, CY + 41.0 * sinA
+    x2, y2 = CX + 55.0 * cosA, CY + 55.0 * sinA
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <line x1="{x1:.2f}" y1="{y1:.2f}" x2="{x2:.2f}" y2="{y2:.2f}" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" opacity="0.95" />
 </svg>'''
 
 def generate_lower_svg(p_percent=50.0):
@@ -85,6 +98,17 @@ def generate_lower_svg(p_percent=50.0):
 {chr(10).join(paths)}
 </svg>'''
 
+def generate_lower_tick_svg(p_percent=50.0):
+    p = max(0.0, min(100.0, float(p_percent)))
+    ang = (195.0 - (p / 100.0) * 210.0) % 360.0
+    rad = ang * TO_RAD
+    cosA, sinA = math.cos(rad), math.sin(rad)
+    x1, y1 = CX + 41.0 * cosA, CY + 41.0 * sinA
+    x2, y2 = CX + 55.0 * cosA, CY + 55.0 * sinA
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <line x1="{x1:.2f}" y1="{y1:.2f}" x2="{x2:.2f}" y2="{y2:.2f}" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" opacity="0.95" />
+</svg>'''
+
 def generate_combined_duo_svg(p_top=50.0, p_bottom=50.0):
     upper = generate_upper_svg(p_top)
     lower = generate_lower_svg(p_bottom)
@@ -105,21 +129,23 @@ def pregenerate_all():
     ]
     for d in dirs:
         os.makedirs(d, exist_ok=True)
-        # Generate upper-0.svg to upper-100.svg
-        # Generate lower-0.svg to lower-100.svg
-        # Generate duo-0.svg to duo-100.svg (for backward compatibility)
+        # Generate upper-0..100, lower-0..100, duo-0..100
+        # Generate upper-tick-0..100, lower-tick-0..100
         for p in range(101):
-            upper_content = generate_upper_svg(p)
             with open(os.path.join(d, f"upper-{p}.svg"), "w", encoding="utf-8") as f:
-                f.write(upper_content)
+                f.write(generate_upper_svg(p))
 
-            lower_content = generate_lower_svg(p)
             with open(os.path.join(d, f"lower-{p}.svg"), "w", encoding="utf-8") as f:
-                f.write(lower_content)
+                f.write(generate_lower_svg(p))
 
-            combined_content = generate_combined_duo_svg(p, p)
+            with open(os.path.join(d, f"upper-tick-{p}.svg"), "w", encoding="utf-8") as f:
+                f.write(generate_upper_tick_svg(p))
+
+            with open(os.path.join(d, f"lower-tick-{p}.svg"), "w", encoding="utf-8") as f:
+                f.write(generate_lower_tick_svg(p))
+
             with open(os.path.join(d, f"duo-{p}.svg"), "w", encoding="utf-8") as f:
-                f.write(combined_content)
+                f.write(generate_combined_duo_svg(p, p))
 
         # Default fallbacks
         with open(os.path.join(d, "duo-default.svg"), "w", encoding="utf-8") as f:
@@ -136,7 +162,7 @@ def pregenerate_all():
         with ThreadPoolExecutor(max_workers=8) as ex:
             list(ex.map(to_png, svg_files))
 
-    print("Pre-generated inverted upper-0..100 (short), lower-0..100 (long) SVGs & PNGs successfully.")
+    print("Pre-generated inverted upper, lower, and pace tick SVGs & PNGs successfully (with Blue #3b82f6).")
 
 if __name__ == "__main__":
     pregenerate_all()

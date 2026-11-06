@@ -959,6 +959,8 @@ export default class OpenUsage extends View {
 
       let topPercent = null;
       let bottomPercent = null;
+      let topGuidePct = null;
+      let botGuidePct = null;
       let topStatus = "ahead";
       let bottomStatus = "ahead";
       const summaries = [];
@@ -975,6 +977,9 @@ export default class OpenUsage extends View {
             });
             topPercent = Math.round(pace24.remainingPercent);
             topStatus = pace24.status;
+            if (pace24.guideRemainingPercent != null) {
+              topGuidePct = Math.round(clamp(pace24.guideRemainingPercent, 0, 100));
+            }
             summaries.push(`• 24h: 잔여 ${topPercent}% (${countdown(w24.resets_at) || "idle"})`);
           }
         } else {
@@ -988,6 +993,9 @@ export default class OpenUsage extends View {
             });
             topPercent = Math.round(pace5.remainingPercent);
             topStatus = pace5.status;
+            if (pace5.guideRemainingPercent != null) {
+              topGuidePct = Math.round(clamp(pace5.guideRemainingPercent, 0, 100));
+            }
             summaries.push(`• 5시간: 잔여 ${topPercent}% (${countdown(w5.resets_at) || "idle"})`);
           }
         }
@@ -1002,6 +1010,9 @@ export default class OpenUsage extends View {
           });
           bottomPercent = Math.round(pace7.remainingPercent);
           bottomStatus = pace7.status;
+          if (pace7.guideRemainingPercent != null) {
+            botGuidePct = Math.round(clamp(pace7.guideRemainingPercent, 0, 100));
+          }
           summaries.push(`• 주간(7d): 잔여 ${bottomPercent}% (${countdown(w7.resets_at) || "idle"})`);
         }
       }
@@ -1030,14 +1041,14 @@ export default class OpenUsage extends View {
           ? "#ef4444"
           : (topPercent <= 50 || topStatus === "behind")
             ? "#f59e0b"
-            : "#10b981";
+            : "#3b82f6";
 
       // Bottom text Color (7d)
       const bottomColor = (bottomPercent <= 20 || bottomStatus === "spent")
         ? "#ef4444"
         : (bottomPercent <= 50 || bottomStatus === "behind")
           ? "#f59e0b"
-          : "#10b981";
+          : "#3b82f6";
 
       const topLabel = isOpenCode ? "24h" : "5h";
 
@@ -1049,8 +1060,8 @@ export default class OpenUsage extends View {
 
       const tip = [
         `${acc.name} (${acc.label || "Default"})`,
-        `• ${topLabel} 잔여: ${topPercent}%${is7dExhausted ? " (주간 소진으로 비활성)" : ""}`,
-        `• 7d 잔여: ${bottomPercent}%`,
+        `• ${topLabel} 잔여: ${topPercent}%${topGuidePct !== null ? ` (가이드: ${topGuidePct}%)` : ""}${is7dExhausted ? " (주간 소진으로 비활성)" : ""}`,
+        `• 7d 잔여: ${bottomPercent}%${botGuidePct !== null ? ` (가이드: ${botGuidePct}%)` : ""}`,
         ...summaries.filter((s) => !s.includes(topLabel) && !s.includes("7d")),
         "클릭하여 전체 사용량 열기",
       ].join("\n");
@@ -1068,26 +1079,44 @@ export default class OpenUsage extends View {
         .rounded(8)
         .tooltip(tip)
         .on_click(() => run("mod.open", { name: "openusage" }))
-        // Pure Status-Trio Dual Arc Gauge: 40x40 (Minimal Icon Widget)
+        // Pure Status-Trio Dual Arc Gauge: 40x40 (Minimal Icon Widget with Pace Marks)
         .child(
           div()
             .relative()
             .size(40)
-            // Upper Arch Gauge (PNG)
+            // 1. Upper Arch Gauge (PNG)
             .child(
               div()
                 .absolute()
                 .inset_0()
                 .child(image(upperPngPath).w(40).h(40))
             )
-            // Lower Cradle Gauge (PNG)
+            // 2. Upper Pace Guideline Tick (PNG)
+            .when(topGuidePct !== null && !is7dExhausted, (el) =>
+              el.child(
+                div()
+                  .absolute()
+                  .inset_0()
+                  .child(image(`mods/openusage/cache/upper-tick-${topGuidePct}.png`).w(40).h(40))
+              )
+            )
+            // 3. Lower Cradle Gauge (PNG)
             .child(
               div()
                 .absolute()
                 .inset_0()
                 .child(image(lowerPngPath).w(40).h(40))
             )
-            // Center Provider Logo (e.g. OpenAI white flower, Claude, Antigravity, OpenCode)
+            // 4. Lower Pace Guideline Tick (PNG)
+            .when(botGuidePct !== null && !is7dExhausted, (el) =>
+              el.child(
+                div()
+                  .absolute()
+                  .inset_0()
+                  .child(image(`mods/openusage/cache/lower-tick-${botGuidePct}.png`).w(40).h(40))
+              )
+            )
+            // 5. Center Provider Logo (e.g. OpenAI white flower, Claude, Antigravity, OpenCode)
             .child(
               div()
                 .absolute()
